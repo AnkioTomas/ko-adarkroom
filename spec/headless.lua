@@ -133,6 +133,8 @@ advance(10); dismissEvents(engine)
 assert(sm:get("stores.fur") > fur0 or sm:get("stores.fur") == fur0 + 0.5, "hunter income")
 -- 查看陷阱
 advance(90); dismissEvents(engine)
+-- 「陷阱被毁」事件可能随机拆掉陷阱，补一个保证按钮存在
+if sm:get('game.buildings["trap"]', true) == 0 then sm:set('game.buildings["trap"]', 1); advance(0) end
 click("查看陷阱")
 
 -- 3. 小偷剧情：开放世界后库存超 5000 -> 小偷收入 -> 全局事件
@@ -140,7 +142,90 @@ sm:set("features.location.world", true)
 sm:set("stores.wood", 6000)
 assert(sm:get("game.thieves") == 1 and sm:get('income["thieves"]'), "thieves started")
 
--- 4. 存盘与关闭
+-- 4. 尘途与世界：罗盘 → 整理背包 → 出发 → 移动 → 战斗 → 拾取 → 中途关闭再继续 → 回家
+sm:set("stores.compass", 1)
+assert(engine.modules.path and engine.modules.world, "path opened by compass")
+assert(type(sm:get("game.world.map")) == "table" and sm:get("game.world.map")[30][30] == "A", "map generated")
+sm:set('stores["cured meat"]', 30); sm:set('stores["s armour"]', 1)
+dismissEvents(engine)
+engine:travelTo(engine.modules.path); advance(0); dismissEvents(engine)
+click("+10")
+assert(engine.modules.path:outfit()["cured meat"] == 10, "packed meat")
+click("出发")
+local world = engine.modules.world
+assert(engine.activeModule == world and world.health == 45, "embarked, hp " .. tostring(world.health))
+assert(sm:get('stores["cured meat"]') == 20, "meat taken from stores")
+assert(view.map and #view.map == 15 and view.map[8]:sub(11, 11) == "@", "map viewport centered")
+click("北")
+assert(world.curPos[2] == 29, "moved north")
+dismissEvents(engine)
+-- 中途关闭、重开：继续远征
+g:close()
+assert(saved.expedition and saved.expedition.curPos[2] == 29, "expedition saved")
+g = require("adarkroom.game").new(host):show()
+engine, sm = g.engine, g.engine.state
+world = engine.modules.world
+advance(0)
+assert(engine.activeModule == world and world.curPos[2] == 29, "expedition resumed")
+-- 战斗：咆哮的野兽
+engine.events:startEvent(require("adarkroom.events.encounters")[1])
+advance(0)
+local rounds = 0
+while engine.events.fight and rounds < 60 do
+    local b = find("挥拳")
+    if b and b.enabled then b.callback() end
+    advance(1)
+    rounds = rounds + 1
+end
+assert(world.health > 0 and engine.events:activeEvent(), "won the fight")
+print("fight rounds", rounds, "hp", world.health)
+advance(1)
+local te = find("拿走一切")
+if te and te.enabled then te.callback() advance(0) end
+click("离开")
+advance(1)
+assert(engine.events:activeEvent() == nil, "left fight")
+-- 每个地标事件随机走一遍，抓转换后的运行时错误（血量、补给开挂，避免死亡）
+local names = {}
+for k in pairs(require("adarkroom.events.setpieces")) do names[#names + 1] = k end
+table.sort(names)
+for _, name in ipairs(names) do
+    for _ = 1, 3 do
+        local o = engine.modules.path:outfit()
+        o.torch, o["cured meat"], o.medicine = 10, 10, 5
+        world.health, world.water = 999, 10
+        engine.events:startEvent(engine.events:setpiece(name))
+        local steps = 0
+        while engine.events:activeEvent() and steps < 80 do
+            advance(0)
+            if engine.events.fight then
+                local b = find("挥拳") or flat()[1]
+                if b and b.enabled ~= false then b.callback() end
+                world.health = 999
+                advance(1)
+            else
+                local opts = {}
+                for _, b in ipairs(flat()) do if b.enabled ~= false then opts[#opts + 1] = b end end
+                if #opts == 0 then advance(1) else opts[math.random(#opts)].callback() end
+                advance(1)
+            end
+            steps = steps + 1
+        end
+        if engine.events:activeEvent() then engine.events:endEvent() end
+    end
+end
+world.curPos = { 30, 29 }
+world.health = world:getMaxHealth()
+print("setpieces exercised", #names)
+
+-- 走回村庄
+click("南")
+dismissEvents(engine)
+assert(engine.activeModule == engine.modules.path, "returned home: " .. tostring(engine.activeModule.name))
+assert(sm:get("expedition") == nil, "expedition cleared")
+assert(sm:get('stores["cured meat"]') >= 20, "outfit returned")
+
+-- 5. 存盘与关闭
 g:close()
 assert(saved.port_version == 2 and #queue == 0, "close clears timers")
 print("OK", "pop", saved.game.population, "huts", saved.game.buildings.hut)

@@ -1,6 +1,6 @@
 # ko-a-dark-room · 小黑屋 KOReader 插件
 
-把 [A Dark Room](https://github.com/doublespeakgames/adarkroom)（Michael Townsend / doublespeakgames，MPL-2.0）移植为 Lua 实现的 KOReader 插件，同时可作为「月读」扩展使用。
+把 A Dark Room（Michael Townsend / doublespeakgames，GitHub 仓库 doublespeakgames/adarkroom，MPL-2.0）移植为 Lua 实现的 KOReader 插件，同时可作为「月读」扩展使用。
 
 ## 安装
 
@@ -22,7 +22,10 @@ adarkroom.koplugin/
   adarkroom/events/global.lua   全局事件（小偷）
   adarkroom/events/room.lua     屋内事件（游牧商人、怪声、乞丐、神秘流浪者、侦察兵、大师、病人…）
   adarkroom/events/outside.lua  屋外事件（陷阱被毁、火灾、疾病、瘟疫、野兽、军队突袭）
-  adarkroom/events/marketing.lua 原版交叉推广事件（阅读器上只显示链接文字）
+  adarkroom/events/encounters.lua 荒野遭遇战（tools/convert_events.py 从上游生成）
+  adarkroom/events/setpieces.lua  地标事件：洞穴、小镇、城市、矿场、飞船等（同上，自动生成）
+  adarkroom/path.lua            漫漫尘途：整理背包、出发
+  adarkroom/world.lua           世界地图：生成、移动、迷雾、水和食物、地标、回家、死亡
   adarkroom/items.lua           可建造/制作/交易物品数据（原版 Craftables / TradeGoods）
   adarkroom/outside.lua         屋外：伐木、陷阱、小屋与人口、工人分配与收入
   adarkroom/notifications.lua   通知日志与按模块排队
@@ -41,7 +44,7 @@ adarkroom.koplugin/
 1. **骨架**（已完成）：插件骨架、宿主抽象层、月读入口、最小可玩“生火”界面、许可证。
 2. **引擎**（已完成）：Engine / StateManager（`$SM` 等价物）、存档读写与版本迁移、事件系统（events.js 框架）、通知日志、收入定时器。
 3. **小黑屋与村庄**（已完成）：Room（火、温度、陌生人、建造者）、Outside（采集、陷阱、村民分工、人口）、建筑与制作、交易站。
-4. **世界地图与战斗**：Path（装备、背包）、World（地图生成、移动、水与食物、地标）、战斗与遭遇事件、Setpieces。
+4. **世界地图与战斗**（已完成）：Path（装备、背包）、World（地图生成、移动、水与食物、地标）、战斗与遭遇事件、Setpieces。
 5. **飞船与结局**：Ship、Space（躲避小行星小游戏，用电子墨水友好的回合化方式重做）、Prestige / 计分、中文本地化完善、月读集成打磨。
 
 ## 许可证
@@ -51,3 +54,22 @@ MPL-2.0，见 `LICENSE`。原作 © doublespeakgames，本项目为移植作品�
 ## 测试
 
 无需 KOReader 的冒烟测试：在仓库根目录运行 `lua spec/headless.lua`（Lua 5.1 / LuaJIT / 5.4）。
+
+## 纯离线
+
+插件不联网、不含任何在线服务。相对原版移除了：Dropbox 云存档、分享、应用商店/平台推广、
+交叉推广事件（Penrose）、统计上报（原版 Engine.event 的 Google Analytics）以及外部链接；
+本地化表在生成时也会过滤掉这些功能的文案（见 tools/gen_l10n.py）。
+源码中仅保留 MPL-2.0 规定的许可证声明文字。
+
+## 与原版的差异
+
+- 战斗仍是实时的，但只在出手/命中时刷新屏幕，不做逐秒倒计时动画。
+- 背包满时原版会弹出“丢弃”菜单，这里拾取按钮直接置灰，需先在战斗外丢弃（第 5 批改进）。
+- 远征途中关闭插件会保存进度，下次打开回到地图上（原版刷新网页会丢失远征）。
+- 处决者战舰（Executioner）与制造机（Fabricator）属于原版后续扩展，计划在第 5 批移植。
+
+## 工具
+
+- `tools/gen_l10n.py <adarkroom 源码目录> zh_cn`：从上游生成本地化表。
+- `tools/convert_events.py <in.js> <out.lua> "<注释>"`：把上游事件数据（setpieces/encounters）转换成 Lua。

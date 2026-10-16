@@ -1,6 +1,6 @@
 --[[--
 宿主抽象。游戏代码只通过 host 对象访问外部世界：
-  host:showScreen(view)        -- view = { title, lines = {string...}, buttons = { 按钮 | {按钮...}(一行) | { label }(分组标题) }, on_close? }；再次调用即刷新
+  host:showScreen(view)        -- view = { title, lines = {string...}, buttons = { 按钮 | {按钮...}(一行) | { label }(分组标题) }, on_close?, map? = {等宽文本行} }；再次调用即刷新
   host:closeScreen()
   host:schedule(seconds, fn)   -- 返回句柄
   host:unschedule(handle)

@@ -144,6 +144,8 @@ function Engine:saveGame()
         if left > 0 then cd[id] = left end
     end
     self.state.tree.cooldown = cd
+    local world = self.modules.world
+    self.state.tree.expedition = world and world:snapshot() or nil
     self.host:saveState(self.state.tree)
 end
 
@@ -181,7 +183,7 @@ function Engine:render()
         local nav = {}
         for _, name in ipairs(self.order) do
             local m = self.modules[name]
-            if m ~= self.activeModule then
+            if m ~= self.activeModule and not m.hidden and not (self.activeModule and self.activeModule.hidden) then
                 nav[#nav + 1] = { text = "→ " .. m:locationName(), callback = function() self:travelTo(m) end }
             end
         end
@@ -189,9 +191,15 @@ function Engine:render()
         buttons[#buttons + 1] = nav
     end
     self.host:showScreen{
-        title = view.title, lines = lines, buttons = buttons,
+        title = view.title, lines = lines, buttons = buttons, map = view.map,
         on_close = function() self:close() end, -- 标题栏关闭按钮
     }
+end
+
+--- 原版 Prestige.collectStores（被毁村庄的地标）；声望系统在第 5 批。
+function Engine:prestigeCollect()
+    local ok, Prestige = pcall(require, "adarkroom.prestige")
+    if ok and Prestige.collectStores then Prestige.collectStores(self) end
 end
 
 -- MODULES --------------------------------------------------------------------
@@ -220,13 +228,21 @@ function Engine:start()
     self.visible = true
     local room = self:module("room")
     if self.state:get("features.location.outside") then self:module("outside") end
+    if self.state:get("features.location.path") or self.state:get("stores.compass") then self:module("path") end
+    local snap = self.state:get("expedition")
     self.events:init()
     for id in pairs(self.cooling) do
         local left = self:cooldownLeft(id)
         if left > 0 then self:setTimeout(function() self:requestRender() end, left) end
     end
     self:incomeTick()
-    self:travelTo(room)
+    if type(snap) == "table" and self.modules.world then
+        -- 远征途中关闭过插件：回到地图上继续
+        self.modules.world:resume(snap)
+        self.activeModule = self.modules.world
+    else
+        self:travelTo(room)
+    end
     self:render()
     return self
 end

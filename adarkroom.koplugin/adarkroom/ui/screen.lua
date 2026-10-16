@@ -54,7 +54,18 @@ function GameScreen:init()
     end
     flush()
     local buttons = ButtonTable:new{ width = math.floor(w * 0.9), buttons = rows, zero_sep = true }
-    local text_h = h - title:getSize().h - buttons:getSize().h - Screen:scaleBySize(40)
+    -- 世界地图：等宽字体逐行绘制（view.map = { "....", ... }）
+    local map
+    if view.map then
+        map = TextBoxWidget:new{
+            text = table.concat(view.map, "\n"),
+            face = Font:getFace("infont", 18),
+            width = math.floor(w * 0.9),
+            alignment = "center",
+        }
+    end
+    local map_h = map and map:getSize().h or 0
+    local text_h = h - title:getSize().h - buttons:getSize().h - map_h - Screen:scaleBySize(40)
     local text = TextBoxWidget:new{
         text = table.concat(view.lines or {}, "\n"),
         face = Font:getFace("cfont", 20),
@@ -69,6 +80,7 @@ function GameScreen:init()
             align = "center",
             title,
             VerticalSpan:new{ width = Screen:scaleBySize(20) },
+            map or VerticalSpan:new{ width = 0 },
             text,
             VerticalSpan:new{ width = Screen:scaleBySize(20) },
             buttons,

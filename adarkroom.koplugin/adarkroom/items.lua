@@ -83,6 +83,12 @@ for _, list in ipairs({ Items.MiscItems, Items.TradeGoods, Items.Craftables }) d
     for _, it in ipairs(list) do Items.byName[it.name] = it end
 end
 
+--- 是否在原版 Room.Craftables 里
+function Items.isCraftable(name)
+    for _, it in ipairs(Items.Craftables) do if it.name == name then return true end end
+    return false
+end
+
 --- 原版 $SM.num：建筑数在 game.buildings，其余在 stores。
 function Items.num(sm, name, item)
     if item.type == "building" then return sm:get('game.buildings["' .. name .. '"]', true) end

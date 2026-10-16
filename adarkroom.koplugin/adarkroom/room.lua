@@ -244,6 +244,10 @@ function Room:handleStateUpdates(e)
     local sm = self.engine.state
     if e.category == "stores" then
         self:updateBuildButtons()
+        -- 原版 updateStoresView：拿到罗盘后开辟漫漫尘途
+        if sm:get("stores.compass") and not self.engine.modules.path then
+            self.engine:module("path"):announce()
+        end
         -- 原版 updateStoresView：库存过多且已开放世界地图时，小偷出现
         if sm:get("game.thieves") == nil and sm:get("features.location.world") then
             for _, v in pairs(sm:get("stores") or {}) do
