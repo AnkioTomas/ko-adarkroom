@@ -1,12 +1,25 @@
-# ko-a-dark-room · 小黑屋 KOReader 插件
+# ko-adarkroom · 小黑屋
 
-把 A Dark Room（Michael Townsend / doublespeakgames，GitHub 仓库 doublespeakgames/adarkroom，MPL-2.0）移植为 Lua 实现的 KOReader 插件，同时可作为「月读」扩展使用。
+[![CI](https://github.com/AnkioTomas/ko-adarkroom/actions/workflows/ci.yml/badge.svg)](https://github.com/AnkioTomas/ko-adarkroom/actions/workflows/ci.yml)
+
+把 [A Dark Room](https://github.com/doublespeakgames/adarkroom)（Michael Townsend / doublespeakgames，MPL-2.0）完整移植为纯 Lua 的 KOReader 插件，同时可作为「月读」扩展使用。
+
+## 功能
+
+- 完整流程：小黑屋生火 → 建造者与村庄 → 漫漫尘途远征、世界地图、战斗与地标 → 残破战舰与制造机 → 星舰升空 → 结局与声望重开。
+- 中文界面（上游中文表 + 后期内容补译）。
+- 墨水屏友好：文本 + 按钮界面，按钮分页，日志可滚动，只在必要时刷新。
+- 自动存档；远征途中关闭也能恢复到地图上。
+- 100% 离线，无任何网络请求。
+- 作为月读扩展时使用月读主题组件，首页提供入口组件。
+
+下载：在 [Releases](https://github.com/AnkioTomas/ko-adarkroom/releases) 页面获取 `adarkroom.koplugin.zip`。
 
 ## 安装
 
 ### 作为 KOReader 插件
 
-1. 把 `adarkroom.koplugin` 整个目录复制到 KOReader 的 `plugins/` 下（如 Kindle 的 `koreader/plugins/`）。
+1. 下载并解压 `adarkroom.koplugin.zip`，把 `adarkroom.koplugin` 整个目录复制到 KOReader 的 `plugins/` 下（如 Kindle 的 `koreader/plugins/`）。
 2. 重启 KOReader，主菜单「工具 → 小黑屋」进入。
 3. 存档在 KOReader 设置目录的 `settings/adarkroom.lua`（实际为 DataStorage 设置目录下 `adarkroom.lua`）。
 
@@ -59,18 +72,6 @@ adarkroom.koplugin/
 
 游戏代码只依赖 host 接口，不直接碰宿主 API。月读首页组件只是入口按钮，游戏在全屏界面里进行。
 
-## 分批计划
-
-1. **骨架**（已完成）：插件骨架、宿主抽象层、月读入口、最小可玩“生火”界面、许可证。
-2. **引擎**（已完成）：Engine / StateManager（`$SM` 等价物）、存档读写与版本迁移、事件系统（events.js 框架）、通知日志、收入定时器。
-3. **小黑屋与村庄**（已完成）：Room（火、温度、陌生人、建造者）、Outside（采集、陷阱、村民分工、人口）、建筑与制作、交易站。
-4. **世界地图与战斗**（已完成）：Path（装备、背包）、World（地图生成、移动、水与食物、地标）、战斗与遭遇事件、Setpieces。
-5. **飞船与结局**（已完成）：Ship、Space（回合制躲陨石）、Prestige / 计分、残破战舰与制造机、丢弃菜单、按钮分页与可滚动日志、月读适配（存档 / 设置 / 主题界面）。
-
-## 许可证
-
-MPL-2.0，见 `LICENSE`。原作 © doublespeakgames，本项目为移植作品，修改后的源文件同样以 MPL-2.0 发布。
-
 ## 测试
 
 无需 KOReader 的冒烟测试：在仓库根目录运行 `lua spec/headless.lua` 和 `lua spec/headless2.lua`（Lua 5.1 / LuaJIT / 5.4）。headless2 用虚拟时钟覆盖各阶段存档/关闭/重开、全部村庄事件、所有战斗场景（含特技、阵亡）、分页行数、结局与声望，并断言关闭后无残留定时器。
@@ -95,9 +96,24 @@ MPL-2.0，见 `LICENSE`。原作 © doublespeakgames，本项目为移植作品�
 - 按钮超过一页（默认 8 行，设置项 `page_rows`）时分页，库存与通知日志区可滚动。
 - 原版 bug 照搬：铁甲相关的原版问题保持原样；兴奋剂使用时不消耗；
   制造机的上限检查用了 `Math.min(0, …)`（靠按钮置灰兜底）。
-- 上游中文表没有残破战舰 / 制造机等后期文案，由 `l10n/zh_cn_extra.lua` 手工补译。- 远征途中关闭插件会保存进度，下次打开回到地图上（原版刷新网页会丢失远征）。
+- 上游中文表没有残破战舰 / 制造机等后期文案，由 `l10n/zh_cn_extra.lua` 手工补译。
+- 远征途中关闭插件会保存进度，下次打开回到地图上（原版刷新网页会丢失远征）。
 
 ## 工具
 
 - `tools/gen_l10n.py <adarkroom 源码目录> zh_cn`：从上游生成本地化表。
 - `tools/convert_events.py <in.js> <out.lua> "<注释>"`：把上游事件数据（setpieces / encounters / executioner）转换成 Lua。
+
+## 已知问题
+
+- 太空飞行中途关闭不保存，重开回到生火间（与原版刷新网页一致）。
+- 太空段期间村庄定时器照常运行，日志仍会出现屋内消息。
+- 屏幕较矮时世界地图字号较小。
+- 兴奋剂不消耗、制造机上限检查无效、铁甲相关问题：照搬原版行为。
+
+## 许可证与致谢
+
+本项目以 MPL-2.0 发布，见 `LICENSE` 与 `NOTICE`。
+
+原作 A Dark Room © Michael Townsend / doublespeakgames（<https://github.com/doublespeakgames/adarkroom>），MPL-2.0。
+本项目为其 Lua 移植作品，游戏数据与文案改编自上游源码，各源文件保留 MPL-2.0 声明。
