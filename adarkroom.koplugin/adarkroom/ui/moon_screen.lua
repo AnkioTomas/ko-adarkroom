@@ -33,7 +33,8 @@ local Screen = Device.screen
 
 local MoonScreen = InputContainer:extend{ covers_fullscreen = true }
 
-function MoonScreen.new(view, on_close)
+-- 注意不能叫 new：会覆盖 InputContainer:new，MoonScreen:new{} 变成无限尾调用（模拟器里卡死）
+function MoonScreen.open(view, on_close)
     return MoonScreen:new{ view = view, on_close = on_close }
 end
 
@@ -76,20 +77,26 @@ function MoonScreen:init()
         end
     end
 
-    local map
+    -- 地图（ui/maptext.lua）：放不下时逐级缩小字号（同 ui/screen.lua）
+    local fixed = title:getSize().h + rows:getSize().h + Theme.px(32)
+    local map, map_h = nil, 0
     if view.map then
-        map = TextBoxWidget:new{
-            text = table.concat(view.map, "\n"), face = Font:getFace("infont", 18),
-            width = cw, alignment = "center", fgcolor = ink, bgcolor = page_bg,
+        local MapText = require("adarkroom.ui.maptext")
+        for _, size in ipairs({ 22, 18, 15, 12, 10 }) do
+            if map then map:free() end
+            map, map_h = MapText.build(view.map, size, cw, ink, page_bg)
+            if h - fixed - map_h >= Theme.px(48) then break end
+        end
+    end
+    local text_h = h - fixed - map_h
+    local text
+    if text_h >= Theme.px(20) then
+        text = ScrollTextWidget:new{
+            text = table.concat(view.lines or {}, "\n"),
+            face = MText.face("body"), fgcolor = ink, bgcolor = page_bg,
+            width = cw, height = text_h, dialog = self,
         }
     end
-    local map_h = map and map:getSize().h or 0
-    local text_h = h - title:getSize().h - rows:getSize().h - map_h - Theme.px(32)
-    local text = ScrollTextWidget:new{
-        text = table.concat(view.lines or {}, "\n"),
-        face = MText.face("body"), fgcolor = ink, bgcolor = page_bg,
-        width = cw, height = math.max(text_h, Theme.px(48)), dialog = self,
-    }
     self[1] = FrameContainer:new{
         width = w, height = h, padding = 0, bordersize = 0, background = page_bg,
         VerticalGroup:new{
@@ -97,7 +104,7 @@ function MoonScreen:init()
             title,
             VerticalSpan:new{ width = Theme.px(8) },
             map or VerticalSpan:new{ width = 0 },
-            text,
+            text or VerticalSpan:new{ width = 0 },
             VerticalSpan:new{ width = Theme.px(8) },
             rows,
         },

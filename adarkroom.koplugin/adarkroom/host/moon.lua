@@ -3,7 +3,7 @@
 --[[--
 月读宿主适配。月读扩展契约（book.koplugin/source/registry.lua，API = 1）只提供首页组件，
 没有独立的界面 / 定时 API，所以定时仍走 KOReader UIManager；
-  存档 / 设置：utils.settings.getSource("ext.adarkroom") 那张独立表（settings/ext.adarkroom.lua），
+  存档 / 设置：utils.settings.getSource("ext.adarkroom") 那张独立表（月读数据目录 .moon/settings/ext.adarkroom.lua），
     改完 saveSource(ID) 落盘（就地修改同一张表，不会 reset），不写月读自己的分区；
   界面：优先 adarkroom.ui.moon_screen（月读主题组件），提示用月读 Toast；
     月读组件缺失（旧版月读 / 独立运行）时回落通用 KOReader 界面与 InfoMessage。
@@ -38,7 +38,7 @@ function Host:showScreen(view)
     end
     if not self.moon_ui then return KOHost.showScreen(self, view) end
     if self.widget then UIManager:close(self.widget) end
-    local ok, widget = pcall(self.moon_ui.new, view, function()
+    local ok, widget = pcall(self.moon_ui.open, view, function()
         self.widget = nil
         if view.on_close then view.on_close() end
     end)
@@ -71,6 +71,8 @@ end
 function Host:getSetting(key, default)
     if not moonSettings() then return KOHost.getSetting(self, key, default) end
     local v = (conf().settings or {})[key]
+    -- 月读主题按钮更高（control.height），默认每页少放两行，否则导航行会被挤出屏幕（模拟器实测）
+    if v == nil and key == "page_rows" then return 6 end
     if v == nil then return default end
     return v
 end

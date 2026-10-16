@@ -174,8 +174,10 @@ function Engine:render()
     if not view.is_event then
         local msgs = self.notifications:messages()
         if #msgs > 0 then
-            lines[#lines + 1] = ""
-            lines[#lines + 1] = "────────"
+            if #lines > 0 then
+                lines[#lines + 1] = ""
+                lines[#lines + 1] = "────────"
+            end
             for _, m in ipairs(msgs) do lines[#lines + 1] = m end
         end
     end
@@ -222,14 +224,22 @@ function Engine:paginate(key, items)
     local per = self.host:getSetting("page_rows", Engine.PAGE_ROWS)
     if type(per) ~= "number" or per < 2 then per = Engine.PAGE_ROWS end
     if #rows <= per then return rows end
+    -- 按页切分；分组标题不留在页尾，挪到下一页开头
+    local pageList, cur = {}, {}
+    for i, r in ipairs(rows) do
+        if #cur == per or (#cur == per - 1 and r.label and i < #rows) then
+            pageList[#pageList + 1] = cur
+            cur = {}
+        end
+        cur[#cur + 1] = r
+    end
+    if #cur > 0 then pageList[#pageList + 1] = cur end
     self.pages = self.pages or {}
-    local pages = math.ceil(#rows / per)
+    local pages = #pageList
     local page = math.max(1, math.min(self.pages[key] or 1, pages))
     self.pages[key] = page
     local out = {}
-    for i = (page - 1) * per + 1, math.min(#rows, page * per) do out[#out + 1] = rows[i] end
-    -- 分组标题落在页尾时没有意义，挪到下一页
-    if out[#out] and out[#out].label and page < pages then out[#out] = nil end
+    for _, r in ipairs(pageList[page]) do out[#out + 1] = r end
     out[#out + 1] = {
         -- pager 字段给能画专用翻页条的宿主界面用（月读 Pager）；通用界面把它当三个按钮画
         pager = { page = page, pages = pages,

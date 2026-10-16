@@ -22,7 +22,8 @@ local Screen = Device.screen
 
 local GameScreen = InputContainer:extend{ covers_fullscreen = true }
 
-function GameScreen.new(view, on_close)
+-- 注意不能叫 new：会覆盖 InputContainer:new，GameScreen:new{} 变成无限尾调用（模拟器里卡死）
+function GameScreen.open(view, on_close)
     return GameScreen:new{ view = view, on_close = on_close }
 end
 
@@ -59,25 +60,29 @@ function GameScreen:init()
     end
     flush()
     local buttons = ButtonTable:new{ width = math.floor(w * 0.9), buttons = rows, zero_sep = true }
-    -- 世界地图：等宽字体逐行绘制（view.map = { "....", ... }）
-    local map
+    -- 世界地图 / 太空：等宽字体逐行绘制（view.map = { "....", ... }），见 ui/maptext.lua；
+    -- 屏幕放不下时逐级缩小字号。
+    local fixed = title:getSize().h + buttons:getSize().h + Screen:scaleBySize(40)
+    local map, map_h = nil, 0
     if view.map then
-        map = TextBoxWidget:new{
-            text = table.concat(view.map, "\n"),
-            face = Font:getFace("infont", 18),
+        local MapText = require("adarkroom.ui.maptext")
+        for _, size in ipairs({ 22, 18, 15, 12, 10 }) do
+            if map then map:free() end
+            map, map_h = MapText.build(view.map, size, math.floor(w * 0.9))
+            if h - fixed - map_h >= Screen:scaleBySize(60) then break end
+        end
+    end
+    local text_h = h - fixed - map_h
+    local text
+    if text_h >= Screen:scaleBySize(24) then
+        text = ScrollTextWidget:new{
+            text = table.concat(view.lines or {}, "\n"),
+            face = Font:getFace("cfont", 20),
             width = math.floor(w * 0.9),
-            alignment = "center",
+            height = text_h,
+            dialog = self,
         }
     end
-    local map_h = map and map:getSize().h or 0
-    local text_h = h - title:getSize().h - buttons:getSize().h - map_h - Screen:scaleBySize(40)
-    local text = ScrollTextWidget:new{
-        text = table.concat(view.lines or {}, "\n"),
-        face = Font:getFace("cfont", 20),
-        width = math.floor(w * 0.9),
-        height = math.max(text_h, Screen:scaleBySize(60)),
-        dialog = self,
-    }
     self[1] = FrameContainer:new{
         width = w, height = h, padding = 0, bordersize = 0,
         background = Blitbuffer.COLOR_WHITE,
@@ -86,7 +91,7 @@ function GameScreen:init()
             title,
             VerticalSpan:new{ width = Screen:scaleBySize(20) },
             map or VerticalSpan:new{ width = 0 },
-            text,
+            text or VerticalSpan:new{ width = 0 },
             VerticalSpan:new{ width = Screen:scaleBySize(20) },
             buttons,
         },

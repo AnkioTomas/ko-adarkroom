@@ -427,7 +427,7 @@ do
         show = function(_, w) shown = w end, close = function() end,
         scheduleIn = function(_, s, fn) host:schedule(s, fn) end, unschedule = function(_, fn) host:unschedule(fn) end,
     }
-    package.loaded["adarkroom.ui.screen"] = { new = function(v, oc) return { generic = true, view = v, on_close = oc } end }
+    package.loaded["adarkroom.ui.screen"] = { open = function(v, oc) return { generic = true, view = v, on_close = oc } end }
     local MoonHost = require("adarkroom.host.moon")
     local mh = MoonHost.new()
     mh.now = function() return clock end
@@ -441,7 +441,7 @@ do
     mh:setSetting("page_rows", 6)
     assert(mh:getSetting("page_rows", 8) == 6 and files["ext.adarkroom"].settings.page_rows == 6)
     -- 有月读主题界面时优先用它
-    package.loaded["adarkroom.ui.moon_screen"] = { new = function(v) return { moon = true, view = v } end }
+    package.loaded["adarkroom.ui.moon_screen"] = { open = function(v) return { moon = true, view = v } end }
     local mh2 = MoonHost.new()
     mh2.now = function() return clock end
     local mg2 = require("adarkroom.game").new(mh2):show()
