@@ -73,7 +73,7 @@ MPL-2.0，见 `LICENSE`。原作 © doublespeakgames，本项目为移植作品�
 
 ## 测试
 
-无需 KOReader 的冒烟测试：在仓库根目录运行 `lua spec/headless.lua`（Lua 5.1 / LuaJIT / 5.4）。
+无需 KOReader 的冒烟测试：在仓库根目录运行 `lua spec/headless.lua` 和 `lua spec/headless2.lua`（Lua 5.1 / LuaJIT / 5.4）。headless2 用虚拟时钟覆盖各阶段存档/关闭/重开、全部村庄事件、所有战斗场景（含特技、阵亡）、分页行数、结局与声望，并断言关闭后无残留定时器。
 覆盖：存档迁移 → 生火 / 建造者 / 村庄 → 出发、战斗、全部地标与残破战舰事件（含敌人特技、自爆）→
 丢弃菜单 → 回家解锁制造机 / 星舰 → 坠毁一次 → 升空通关 → 舰队信标结局 → 声望重开并在被毁村落取回库存
 → 按钮分页；最后用 `utils.settings` / UIManager 桩模拟月读宿主（存档、设置、主题界面优先与回落、描述文件约定）。

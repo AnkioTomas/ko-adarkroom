@@ -171,7 +171,8 @@ function Engine:render()
     local view = self.events:view() or (self.activeModule and self.activeModule:view()) or { title = L("A Dark Room") }
     local lines = {}
     for _, l in ipairs(view.lines or {}) do lines[#lines + 1] = l end
-    if not view.is_event then
+    -- 结局画面（原版整页淡出）不再显示消息记录
+    if not view.is_event and not view.ending then
         local msgs = self.notifications:messages()
         if #msgs > 0 then
             if #lines > 0 then
@@ -184,7 +185,7 @@ function Engine:render()
     local buttons = self:paginate(view.title or "", view.buttons or {})
     if not view.is_event then
         local nav = {}
-        for _, name in ipairs(self.order) do
+        for _, name in ipairs(view.ending and {} or self.order) do
             local m = self.modules[name]
             if m ~= self.activeModule and not m.hidden and not (self.activeModule and self.activeModule.hidden) then
                 nav[#nav + 1] = { text = "→ " .. m:locationName(), callback = function() self:travelTo(m) end }
