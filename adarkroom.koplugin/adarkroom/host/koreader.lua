@@ -37,6 +37,13 @@ function Host:showScreen(view)
     if old then UIManager:close(old, "ui") end
 end
 
+--- 带小数的单调时钟：冷却进度条按它平滑走动（os.time 只有整秒）。
+function Host:now()
+    local ok, t = pcall(require, "ui/time")
+    if ok and t and t.now and t.to_s then return t.to_s(t.now()) end
+    return os.time()
+end
+
 function Host:closeScreen()
     if self.widget then
         require("ui/uimanager"):close(self.widget)

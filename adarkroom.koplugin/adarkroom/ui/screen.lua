@@ -43,11 +43,18 @@ end
 function GameScreen:init()
     local w, h = Screen:getWidth(), Screen:getHeight()
     self.dimen = Geom:new{ x = 0, y = 0, w = w, h = h }
+    local k = kit()
+    k.bars = {}
     self[1] = FrameContainer:new{
         width = w, height = h, padding = 0, bordersize = 0, background = Blitbuffer.COLOR_WHITE,
-        Layout.build(kit(), self.view, w, h, function() self:onClose() end),
+        Layout.build(k, self.view, w, h, function() self:onClose() end),
     }
+    self.bars = k.bars
 end
+
+-- 显示后才开始走冷却条（此时各条的屏幕坐标已在首次绘制时记下）；关掉就停
+function GameScreen:onShow() Layout.start(self, self.bars) end
+function GameScreen:onCloseWidget() Layout.stop(self) end
 
 function GameScreen:onClose()
     UIManager:close(self, "ui") -- 整屏刷新，回到下层（月读首页 / 文件管理器）时不留残影

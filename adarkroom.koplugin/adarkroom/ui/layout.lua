@@ -17,7 +17,6 @@ local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
-local LineWidget = require("ui/widget/linewidget")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
 local VerticalGroup = require("ui/widget/verticalgroup")
@@ -51,12 +50,73 @@ local function header(kit, w, title, on_close)
     return HorizontalGroup:new{ align = "center", HorizontalSpan:new{ width = px(16) }, LeftContainer:new{ dimen = Geom:new{ w = tw, h = h }, t }, close }, h
 end
 
---- 冷却细条：剩余比例越小条越短；无冷却时留同样高度的空白，免得按钮跳动。
+--- 冷却细条：自己按剩余时间画长度；界面每 0.5 秒只局部刷新这些细条（见 Layout.tick）。
+local Bar = WidgetContainer:extend{}
+function Bar:frac()
+    local cd = self.cd
+    if not cd or not cd.total or cd.total <= 0 then return 0 end
+    local left = cd.left or 0
+    if cd.ends and cd.now then left = cd.ends - cd.now() end
+    return math.max(0, math.min(1, left / cd.total))
+end
+function Bar:paintTo(bb, x, y)
+    self.dimen.x, self.dimen.y = x, y
+    bb:paintRect(x, y, self.dimen.w, self.dimen.h, self.bg)
+    local fw = math.floor(self.dimen.w * self:frac())
+    if fw > 0 then bb:paintRect(x, y, fw, self.dimen.h, self.color) end
+end
+
+--- 无冷却时留同样高度的空白，免得按钮跳动。
 local function bar(kit, w, cd)
     local h = kit.px(3)
     if not cd or not cd.total or cd.total <= 0 or (cd.left or 0) <= 0 then return VerticalSpan:new{ width = h } end
-    local frac = math.max(0.02, math.min(1, cd.left / cd.total))
-    return box(w, h, LineWidget:new{ dimen = Geom:new{ w = math.floor(w * frac), h = h }, background = kit.greys[2] })
+    local b = Bar:new{ dimen = Geom:new{ x = 0, y = 0, w = w, h = h }, cd = cd, color = kit.greys[2], bg = kit.bg }
+    if kit.bars then kit.bars[#kit.bars + 1] = b end
+    return b
+end
+
+--- 局部刷新冷却条：返回是否还有在走的条。screen 为所属全屏控件。
+function Layout.tick(screen, bars)
+    local UIManager = require("ui/uimanager")
+    local active = false
+    for _, b in ipairs(bars or {}) do
+        if b.last ~= 0 then
+            local f = b:frac()
+            local px = math.floor(b.dimen.w * f)
+            if px ~= b.last then
+                b.last = px
+                -- 只重画这一条细条并只刷新它的矩形，不重绘整个界面
+                local region = Geom:new{ x = b.dimen.x, y = b.dimen.y, w = b.dimen.w, h = b.dimen.h }
+                UIManager:setDirty(nil, function()
+                    b:paintTo(require("device").screen.bb, region.x, region.y)
+                    return "fast", region
+                end)
+            end
+            if f > 0 then active = true end
+        end
+    end
+    return active
+end
+
+--- 屏幕控件挂上冷却条计时器：有条在走时每 0.5 秒 tick，没有就停；关闭时 Layout.stop。
+function Layout.start(screen, bars)
+    if not bars or #bars == 0 then return end
+    local UIManager = require("ui/uimanager")
+    local function step()
+        screen._bar_task = nil
+        if screen._closed then return end
+        if Layout.tick(screen, bars) then
+            screen._bar_task = step
+            UIManager:scheduleIn(0.5, step)
+        end
+    end
+    screen._bar_task = step
+    UIManager:scheduleIn(0.5, step)
+end
+
+function Layout.stop(screen)
+    screen._closed = true
+    if screen._bar_task then require("ui/uimanager"):unschedule(screen._bar_task) screen._bar_task = nil end
 end
 
 --- 按钮区：行由引擎排好（engine:paginate）。
