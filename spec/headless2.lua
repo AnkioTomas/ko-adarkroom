@@ -218,3 +218,15 @@ do
     assert(s.line1:find("小黑屋") and s.line2 == "木头 0", "card: dark room")
     print("OK card")
 end
+
+-- H. 日志去重 ---------------------------------------------------------------------
+do
+    local N = require("adarkroom.notifications")
+    local fake = { state = { tree = {} } }
+    local n = N.new(fake)
+    for _ = 1, 3 do n:printMessage("火") n:printMessage("冷") end
+    n:printMessage("冷")
+    local m = n:messages()
+    assert(#m == 2 and m[1] == "冷" and m[2] == "火", "log dedupe: " .. table.concat(m, ","))
+    print("OK dedupe")
+end

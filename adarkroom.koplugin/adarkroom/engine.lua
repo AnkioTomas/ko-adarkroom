@@ -86,9 +86,9 @@ function Engine:button(opts)
     if opts.cost and next(opts.cost) then
         text = text .. "（" .. require("adarkroom.items").costText(opts.cost) .. "）"
     end
-    if left > 0 then text = text .. " · " .. left .. "s" end
     return {
         text = text,
+        cooldown = left > 0 and { left = left, total = opts.cooldown or left } or nil, -- 界面画成细进度条
         enabled = left == 0 and opts.enabled ~= false,
         callback = function()
             if opts.id and self:cooldownLeft(opts.id) > 0 then return end
@@ -126,6 +126,7 @@ end
 function Engine:clearAllTimers()
     for h in pairs(self.timers) do self.host:unschedule(h) end
     self.timers = {}
+    self.cdTimer = nil
 end
 
 -- SAVE -----------------------------------------------------------------------
@@ -191,11 +192,20 @@ function Engine:render()
                 nav[#nav + 1] = { text = "→ " .. m:locationName(), callback = function() self:travelTo(m) end }
             end
         end
-        nav[#nav + 1] = { text = L("exit"), callback = function() self:close() end }
-        buttons[#buttons + 1] = nav
+        -- 不再放「退出」按钮：界面右上角的 ✕ 负责关闭
+        if #nav > 0 then buttons[#buttons + 1] = nav end
+    end
+    -- 有按钮在冷却时每 3 秒重绘一次，让进度条走动（墨水屏上不做逐秒动画）
+    local cooling = false
+    for _, r in ipairs(buttons) do
+        for _, c in ipairs(r[1] and r or { r }) do if type(c) == "table" and c.cooldown then cooling = true end end
+    end
+    if cooling and not self.cdTimer then
+        self.cdTimer = self:setTimeout(function() self.cdTimer = nil self:requestRender() end, 3)
     end
     self.host:showScreen{
         title = view.title, lines = lines, buttons = buttons, map = view.map,
+        info = view.lines or {}, log = (not view.is_event and not view.ending) and self.notifications:messages() or {},
         on_close = function() self:close() end, -- 标题栏关闭按钮
     }
 end

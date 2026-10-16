@@ -63,6 +63,7 @@ adarkroom.koplugin/
   adarkroom/ui/screen.lua       通用文本 + 按钮界面（可滚动的文本区）
   adarkroom/ui/moon_screen.lua  月读主题界面（ui.themes.widgets.titlebar/button/text/pager）
   adarkroom/ui/moon_card.lua    月读首页卡片（存档摘要，整卡点按进入）
+  adarkroom/ui/layout.lua       两种界面共用的排版（标题行、按钮列、库存、渐淡消息、冷却条）
   adarkroom/events/executioner.lua 残破战舰（Executioner）事件（自动生成）
   adarkroom/fabricator.lua      嗡鸣的制造机：外星合金制造、蓝图
   adarkroom/ship.lua            破旧星舰：加固船身、升级引擎、起飞
@@ -94,7 +95,8 @@ adarkroom.koplugin/
 - 太空段改为回合制：每点一次 ⇇ ← · → ⇉ 算一回合，陨石下落一格（高处有的落两格），高度 +1，过 60 通关；
   引擎等级越高一回合横移越远。被撞船身 -1，归零坠毁回星舰。原版是 60 秒实时键盘躲避。
 - 结局的应用商店链接去掉（纯离线）；结局后存档清空、只留声望，点「重启」直接开新局。
-- 按钮超过一页（默认 8 行，设置项 `page_rows`）时分页，库存与通知日志区可滚动。
+- 按钮超过一页（设置项 `page_rows`）时分页；界面无滚动条：消息新的在上、越旧越淡，放不下的旧消息不显示，连续重复的消息合并。
+- 墨水屏化的界面：只有淡色标题和右上角 ✕（不再有「退出」按钮）；冷却显示为按钮下方的细进度条（每 3 秒刷新）；宽屏时左列按钮、右列库存与消息，窄屏上下堆叠。
 - 原版 bug 照搬：铁甲相关的原版问题保持原样；兴奋剂使用时不消耗；
   制造机的上限检查用了 `Math.min(0, …)`（靠按钮置灰兜底）。
 - 上游中文表没有残破战舰 / 制造机等后期文案，由 `l10n/zh_cn_extra.lua` 手工补译。

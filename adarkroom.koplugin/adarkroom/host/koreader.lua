@@ -28,12 +28,13 @@ end
 function Host:showScreen(view)
     local UIManager = require("ui/uimanager")
     local Screen = require("adarkroom.ui.screen")
-    if self.widget then UIManager:close(self.widget) end
+    local old = self.widget
     self.widget = Screen.open(view, function()
         self.widget = nil
         if view.on_close then view.on_close() end
     end)
-    UIManager:show(self.widget)
+    UIManager:show(self.widget, "ui")
+    if old then UIManager:close(old, "ui") end
 end
 
 function Host:closeScreen()

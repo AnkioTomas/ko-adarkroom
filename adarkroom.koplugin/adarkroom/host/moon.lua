@@ -37,18 +37,20 @@ function Host:showScreen(view)
         self.moon_ui = ok and mod or false
     end
     if not self.moon_ui then return KOHost.showScreen(self, view) end
-    if self.widget then UIManager:close(self.widget) end
+    local old = self.widget
     local ok, widget = pcall(self.moon_ui.open, view, function()
         self.widget = nil
         if view.on_close then view.on_close() end
     end)
     if not ok then
         self.moon_ui = false -- 主题组件运行时出错：本次会话改用通用界面
-        self.widget = nil
         return KOHost.showScreen(self, view)
     end
     self.widget = widget
-    UIManager:show(widget)
+    -- 先盖上新界面再关旧的，并显式整屏刷新：只 show 不给刷新类型时，
+    -- 屏幕上可能残留下层（月读首页底栏）或上一屏的局部内容
+    UIManager:show(widget, "ui")
+    if old then UIManager:close(old, "ui") end
 end
 
 function Host:notify(text)

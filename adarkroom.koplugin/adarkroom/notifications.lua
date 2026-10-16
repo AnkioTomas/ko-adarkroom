@@ -21,6 +21,9 @@ end
 
 function Notifications:printMessage(text)
     local list = self:messages()
+    -- 去重：与最新一条相同则不再记；与上一条相同（如来回切换时成对出现的火堆 / 温度）就挪到最前
+    if list[1] == text then return end
+    if list[2] == text then table.remove(list, 2) end
     table.insert(list, 1, text)
     while #list > Notifications.MAX do table.remove(list) end
 end
