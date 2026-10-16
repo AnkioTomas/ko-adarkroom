@@ -30,7 +30,7 @@
    （`api = 1`，`id = "ext.adarkroom"`，`provides = { source = false, home_widgets = {...} }`，契约同月读
    `book.koplugin/source/registry.lua` 与 `examples/moonsource-demo.koplugin`）。
 3. 在月读首页编辑态「添加组件」里加入「小黑屋」（图标 `local_fire_department`，在月读图标表里）。
-   组件只是入口按钮，点按进入全屏游戏；主菜单入口照常可用。
+   组件是一张跟随月读主题的卡片：火焰图标、标题和存档摘要（火堆状态、所在地、木头、人口；新游戏显示一句引子），整张卡点按进入全屏游戏；主菜单入口照常可用。
 4. 从月读进入时：存档 / 设置写入 `utils.settings.getSource("ext.adarkroom")`（月读数据目录下 `.moon/settings/ext.adarkroom.lua`），
    与独立插件的存档互不影响；界面改用月读主题组件（标题栏、按钮、翻页条、提示，随月读主题切换），
    月读版本没有这些组件时自动回落到通用 KOReader 界面。
@@ -62,6 +62,7 @@ adarkroom.koplugin/
   adarkroom/host/moon.lua       月读适配（存档放 .moon/settings/ext.adarkroom.lua，界面用月读组件）
   adarkroom/ui/screen.lua       通用文本 + 按钮界面（可滚动的文本区）
   adarkroom/ui/moon_screen.lua  月读主题界面（ui.themes.widgets.titlebar/button/text/pager）
+  adarkroom/ui/moon_card.lua    月读首页卡片（存档摘要，整卡点按进入）
   adarkroom/events/executioner.lua 残破战舰（Executioner）事件（自动生成）
   adarkroom/fabricator.lua      嗡鸣的制造机：外星合金制造、蓝图
   adarkroom/ship.lua            破旧星舰：加固船身、升级引擎、起飞

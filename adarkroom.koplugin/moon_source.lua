@@ -17,25 +17,33 @@ end
 
 local ID = "ext.adarkroom"
 
+local function openGame()
+    require("adarkroom.game").new(require("adarkroom.host.moon").new()):show()
+end
+
+local function loadSave()
+    return require("adarkroom.host.moon").new():loadState()
+end
+
 local widget = {
     id = "entry", -- 月读补成 ext.adarkroom.entry
     title = _("小黑屋"),
     icon = "local_fire_department", -- 已核对：在月读 ui/themes/widgets/icon/names.lua（Material Symbols）里
+    heightRange = function()
+        local ok, Card = pcall(require, "adarkroom.ui.moon_card")
+        return { height = ok and Card.height() or 110 }
+    end,
     build = function(_ctx, w, h)
-        -- 月读主题按钮（跟随首页主题）；拿不到就用 KOReader 自带按钮
+        -- 存档摘要卡片（月读主题）；卡片模块出错时退回一个普通按钮，入口不丢
+        local ok, card = pcall(function() return require("adarkroom.ui.moon_card").build(w, h, loadSave, openGame) end)
+        if ok and card then return card end
         local okb, Button = pcall(require, "ui.themes.widgets.button")
         if not okb then Button = require("ui/widget/button") end
         local CenterContainer = require("ui/widget/container/centercontainer")
         local Geom = require("ui/geometry")
         return CenterContainer:new{
             dimen = Geom:new{ w = w, h = h },
-            Button:new{
-                text = _("小黑屋 · 继续游戏"),
-                width = math.floor(w * 0.8),
-                callback = function()
-                    require("adarkroom.game").new(require("adarkroom.host.moon").new()):show()
-                end,
-            },
+            Button:new{ text = _("小黑屋"), width = math.floor(w * 0.8), callback = openGame },
         }
     end,
 }

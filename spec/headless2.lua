@@ -203,3 +203,18 @@ g, e = H.open()
 assert(e.state:get("previous.score") > 0 and e.state:get("stores.wood") == nil, "new game with prestige")
 H.closeCheck(g)
 print("OK headless2")
+
+-- G. 月读首页卡片摘要 ---------------------------------------------------------------
+do
+    local Card = require("adarkroom.ui.moon_card")
+    local s = Card.summary(nil)
+    assert(s.new_game and s.title == "小黑屋" and s.line1 ~= "", "card: new game")
+    s = Card.summary({ previous = { score = 42 } })
+    assert(s.new_game and s.line2:find("42"), "card: prestige only")
+    s = Card.summary({ game = { builder = { level = 4 }, fire = { value = 3 }, buildings = { hut = 3 }, population = 9 },
+        stores = { wood = 123.4 }, features = { location = { outside = true } } })
+    assert(not s.new_game and s.line1 == "火堆燃烧着 · 小型村落" and s.line2 == "木头 123 · 人口 9/12", "card: " .. s.line1 .. " | " .. s.line2)
+    s = Card.summary({ game = { fire = { value = 1 }, builder = { level = 0 } }, stores = {} })
+    assert(s.line1:find("小黑屋") and s.line2 == "木头 0", "card: dark room")
+    print("OK card")
+end
