@@ -79,6 +79,10 @@ end
 function Layout.tick(screen, bars)
     local UIManager = require("ui/uimanager")
     local active = false
+    -- 上面盖着别的窗口（提示、对话框）时不直接往屏幕缓冲里画，免得画到它们身上；下次再补
+    local stack = UIManager._window_stack
+    local top = stack and stack[#stack] and stack[#stack].widget
+    if top and top ~= screen then return true end
     for _, b in ipairs(bars or {}) do
         if b.last ~= 0 then
             local f = b:frac()
@@ -154,9 +158,9 @@ end
 local function log(kit, w, msgs, max_h)
     local col = VerticalGroup:new{ align = "left" }
     local used = 0
-    for i, m in ipairs(msgs or {}) do
+    for i, m in ipairs(type(msgs) == "table" and msgs or {}) do
         local color = i <= 2 and kit.ink or i <= 5 and kit.greys[1] or i <= 9 and kit.greys[2] or kit.greys[3]
-        local tb = TextBoxWidget:new{ text = m, face = kit.face, width = w, fgcolor = color, bgcolor = kit.bg }
+        local tb = TextBoxWidget:new{ text = tostring(m), face = kit.face, width = w, fgcolor = color, bgcolor = kit.bg }
         local h = tb:getSize().h + kit.px(4)
         if used + h > max_h then tb:free() break end
         if #col > 0 then col[#col + 1] = VerticalSpan:new{ width = kit.px(4) } end
