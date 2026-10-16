@@ -20,22 +20,27 @@ adarkroom.koplugin/
   adarkroom/state.lua           状态树（原版 $SM）、收入、存档迁移
   adarkroom/events.lua          事件框架（随机调度、场景、按钮花费/奖励、延迟事件）
   adarkroom/events/global.lua   全局事件（小偷）
+  adarkroom/events/room.lua     屋内事件（游牧商人、怪声、乞丐、神秘流浪者、侦察兵、大师、病人…）
+  adarkroom/events/outside.lua  屋外事件（陷阱被毁、火灾、疾病、瘟疫、野兽、军队突袭）
+  adarkroom/events/marketing.lua 原版交叉推广事件（阅读器上只显示链接文字）
+  adarkroom/items.lua           可建造/制作/交易物品数据（原版 Craftables / TradeGoods）
+  adarkroom/outside.lua         屋外：伐木、陷阱、小屋与人口、工人分配与收入
   adarkroom/notifications.lua   通知日志与按模块排队
   adarkroom/l10n.lua            本地化，l10n/zh_cn.lua 由 tools/gen_l10n.py 从上游生成
-  adarkroom/room.lua            小黑屋：火与温度（建造者等见第 3 批）
+  adarkroom/room.lua            小黑屋：火与温度、建造者、建造/制作/购买
   adarkroom/host/interface.lua  宿主接口：界面 / 定时 / 存档 / 设置 / 提示
   adarkroom/host/koreader.lua   KOReader 适配（settings/adarkroom.lua 存档）
   adarkroom/host/moon.lua       月读适配（存档放 settings/ext.adarkroom.lua）
   adarkroom/ui/screen.lua       通用文本 + 按钮界面
 ```
 
-游戏代码只依赖 host 接口，不直接碰宿主 API。
+游戏代码只依赖 host 接口，不直接碰宿主 API。月读首页组件只是入口按钮，游戏在全屏界面里进行。
 
 ## 分批计划
 
 1. **骨架**（已完成）：插件骨架、宿主抽象层、月读入口、最小可玩“生火”界面、许可证。
 2. **引擎**（已完成）：Engine / StateManager（`$SM` 等价物）、存档读写与版本迁移、事件系统（events.js 框架）、通知日志、收入定时器。
-3. **小黑屋与村庄**：Room（火、温度、陌生人、建造者）、Outside（采集、陷阱、村民分工、人口）、建筑与制作、交易站。
+3. **小黑屋与村庄**（已完成）：Room（火、温度、陌生人、建造者）、Outside（采集、陷阱、村民分工、人口）、建筑与制作、交易站。
 4. **世界地图与战斗**：Path（装备、背包）、World（地图生成、移动、水与食物、地标）、战斗与遭遇事件、Setpieces。
 5. **飞船与结局**：Ship、Space（躲避小行星小游戏，用电子墨水友好的回合化方式重做）、Prestige / 计分、中文本地化完善、月读集成打磨。
 

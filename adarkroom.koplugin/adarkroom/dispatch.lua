@@ -3,6 +3,7 @@
 --[[--
 极简发布/订阅（替代原版 jQuery $.Dispatch）。
 --]]
+local unpack = unpack or table.unpack -- Lua 5.1/LuaJIT 与 5.2+ 兼容
 local Dispatch = {}
 Dispatch.__index = Dispatch
 

@@ -29,10 +29,30 @@ function GameScreen:init()
         width = w, title = view.title or "",
         close_callback = function() self:onClose() end,
     }
-    local rows = {}
-    for _, b in ipairs(view.buttons or {}) do
-        rows[#rows + 1] = { { text = b.text, enabled = b.enabled ~= false, callback = b.callback } }
+    -- 按钮项三种：单个按钮 { text, callback, enabled? }；一行按钮 { {..}, {..} }；分组标题 { label }。
+    -- 连续的单个按钮两两并排，省竖向空间。
+    local function cell(b) return { text = b.text, enabled = b.enabled ~= false, callback = b.callback } end
+    local rows, pending = {}, nil
+    local function flush()
+        if pending then rows[#rows + 1] = { cell(pending) } pending = nil end
     end
+    for _, b in ipairs(view.buttons or {}) do
+        if b.label then
+            flush()
+            rows[#rows + 1] = { { text = b.label, enabled = false, callback = function() end } }
+        elseif b[1] then
+            flush()
+            local row = {}
+            for _, c in ipairs(b) do row[#row + 1] = cell(c) end
+            rows[#rows + 1] = row
+        elseif pending then
+            rows[#rows + 1] = { cell(pending), cell(b) }
+            pending = nil
+        else
+            pending = b
+        end
+    end
+    flush()
     local buttons = ButtonTable:new{ width = math.floor(w * 0.9), buttons = rows, zero_sep = true }
     local text_h = h - title:getSize().h - buttons:getSize().h - Screen:scaleBySize(40)
     local text = TextBoxWidget:new{

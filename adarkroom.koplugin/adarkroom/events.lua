@@ -22,7 +22,7 @@ end
 
 function Events:init()
     self.pool = {}
-    for _, mod in ipairs({ "global" }) do -- room / outside / marketing 在第 3 批加入
+    for _, mod in ipairs({ "global", "room", "outside", "marketing" }) do
         local ok, list = pcall(require, "adarkroom.events." .. mod)
         if ok then
             for _, e in ipairs(list) do self.pool[#self.pool + 1] = e end
@@ -114,6 +114,7 @@ function Events:buttonClick(info)
         sm:addM("stores", mod)
     end
     if info.onChoose then info.onChoose(self.engine) end
+    if info.onClick then info.onClick(self.engine) end
     if info.reward then sm:addM("stores", info.reward) end
     if info.notification then self.engine:notify(nil, info.notification) end
     if info.nextEvent and self.registry and self.registry[info.nextEvent] then
@@ -165,22 +166,26 @@ function Events:view()
 end
 
 -- DELAYED EVENTS (state "wait") ----------------------------------------------
---- 原版用 action 名字符串存到 wait.<stateName>，读档时 eval 回调。这里改成注册表：
---- Events.delayed[action] = function(engine) ... end，由各模块在加载时登记。
+--- 原版把回调的 eval 路径（如 'Room[4].scenes.wood100.action'）存进 wait，读档时 eval。
+--- 这里改成注册表：Events.delayed[action] = function(engine)，事件模块加载时登记；
+--- 剩余秒数存 wait.<净化后的 key>，动作名存 wait_action.<key>。
 Events.delayed = {}
 
-function Events:saveDelay(action, stateName, delay)
+local function delayKey(action) return (action:gsub("[^%w]", "_")) end
+
+function Events:saveDelay(action, delay)
     local sm = self.engine.state
-    local path = Events.delayState .. "." .. stateName
+    local key = delayKey(action)
+    local path = Events.delayState .. "." .. key
     if delay then
         sm:set(path, delay)
-    else
-        delay = sm:get(path, true)
+        sm:set(Events.delayState .. "_action." .. key, action, true)
     end
     local function tick()
         local left = sm:get(path, true) - 1
         if left <= 0 then
-            sm:remove(path)
+            sm:remove(path, true)
+            sm:remove(Events.delayState .. "_action." .. key, true)
             local fn = Events.delayed[action]
             if fn then fn(self.engine) end
         else
@@ -188,7 +193,6 @@ function Events:saveDelay(action, stateName, delay)
             self.engine:setTimeout(tick, 1)
         end
     end
-    sm:set(Events.delayState .. "_action." .. stateName, action, true)
     self.engine:setTimeout(tick, 1)
 end
 
@@ -197,10 +201,8 @@ function Events:initDelay()
     local waits = sm:get(Events.delayState)
     local actions = sm:get(Events.delayState .. "_action") or {}
     if type(waits) ~= "table" then return end
-    for stateName, left in pairs(waits) do
-        if type(left) == "number" and actions[stateName] then
-            self:saveDelay(actions[stateName], stateName)
-        end
+    for key, left in pairs(waits) do
+        if type(left) == "number" and left > 0 and actions[key] then self:saveDelay(actions[key]) end
     end
 end
 

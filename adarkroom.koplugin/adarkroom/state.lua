@@ -203,6 +203,12 @@ function State:collectIncome()
     return changed
 end
 
+--- 原版 $SM.startThieves：小偷开始偷库存，全局事件「小偷」随之可触发。
+function State:startThieves()
+    self:set("game.thieves", 1)
+    self:setIncome("thieves", { delay = 10, stores = { wood = -10, fur = -5, meat = -5 } })
+end
+
 -- MIGRATION ------------------------------------------------------------------
 --- 把任意旧存档变成当前结构。raw 可以是 nil、第 1 批演示存档 { fire, wood, log } 或本结构。
 function State.migrate(raw)

@@ -33,7 +33,7 @@ Engine.Perks = {
 }
 
 function Engine.new(host)
-    local self = setmetatable({ host = host, timers = {}, modules = {}, running = false }, Engine)
+    local self = setmetatable({ host = host, timers = {}, modules = {}, order = {}, running = false }, Engine)
     L.load(host:getSetting("locale", "zh_cn"))
     self.Perks = {}
     for k, p in pairs(Engine.Perks) do
@@ -43,9 +43,58 @@ function Engine.new(host)
     local tree, note = State.migrate(host:loadState())
     self.state = State.new(self, tree)
     self.notifications = Notifications.new(self)
+    self.dispatch:subscribe("stateUpdate", function() self:requestRender() end)
     if note then self:log(note) end
     self.events = require("adarkroom.events").new(self)
+    self.cooling = {}
+    local now = self:now()
+    for id, left in pairs(self.state:get("cooldown") or {}) do
+        if type(left) == "number" and left > 0 then self.cooling[id] = now + left end
+    end
     return self
+end
+
+--- 秒级时钟；测试宿主可提供 host:now() 注入虚拟时间。
+function Engine:now()
+    if type(self.host.now) == "function" then return self.host:now() end
+    return os.time()
+end
+
+-- COOLDOWNS (port of script/Button.js cooldown) -------------------------------
+function Engine:cooldownLeft(id)
+    local ends = self.cooling[id]
+    if not ends then return 0 end
+    local left = ends - self:now()
+    if left <= 0 then self.cooling[id] = nil return 0 end
+    return math.ceil(left)
+end
+
+function Engine:startCooldown(id, seconds)
+    if not seconds or seconds <= 0 then return end
+    self.cooling[id] = self:now() + seconds
+    self:setTimeout(function() self:requestRender() end, seconds)
+end
+
+function Engine:clearCooldown(id) self.cooling[id] = nil end
+
+--- 生成带冷却的按钮。opts = { id, text, cooldown, cost?, enabled?, callback }。
+--- callback 返回 false 表示动作失败（原版 Button.clearCooldown），不进入冷却。
+function Engine:button(opts)
+    local left = opts.id and self:cooldownLeft(opts.id) or 0
+    local text = opts.text
+    if opts.cost and next(opts.cost) then
+        text = text .. "（" .. require("adarkroom.items").costText(opts.cost) .. "）"
+    end
+    if left > 0 then text = text .. " · " .. left .. "s" end
+    return {
+        text = text,
+        enabled = left == 0 and opts.enabled ~= false,
+        callback = function()
+            if opts.id and self:cooldownLeft(opts.id) > 0 then return end
+            if opts.callback() ~= false and opts.id then self:startCooldown(opts.id, opts.cooldown) end
+            self:requestRender()
+        end,
+    }
 end
 
 function Engine:log(msg)
@@ -89,6 +138,12 @@ end
 
 function Engine:saveGame()
     self.state.tree.port_version = State.PORT_VERSION
+    local cd = {}
+    for id in pairs(self.cooling) do
+        local left = self:cooldownLeft(id)
+        if left > 0 then cd[id] = left end
+    end
+    self.state.tree.cooldown = cd
     self.host:saveState(self.state.tree)
 end
 
@@ -123,7 +178,15 @@ function Engine:render()
     local buttons = {}
     for _, b in ipairs(view.buttons or {}) do buttons[#buttons + 1] = b end
     if not view.is_event then
-        buttons[#buttons + 1] = { text = L("exit") == "exit" and "退出" or L("exit"), callback = function() self:close() end }
+        local nav = {}
+        for _, name in ipairs(self.order) do
+            local m = self.modules[name]
+            if m ~= self.activeModule then
+                nav[#nav + 1] = { text = "→ " .. m:locationName(), callback = function() self:travelTo(m) end }
+            end
+        end
+        nav[#nav + 1] = { text = L("exit") == "exit" and "退出" or L("exit"), callback = function() self:close() end }
+        buttons[#buttons + 1] = nav
     end
     self.host:showScreen{
         title = view.title, lines = lines, buttons = buttons,
@@ -133,15 +196,21 @@ end
 
 -- MODULES --------------------------------------------------------------------
 function Engine:register(module)
+    if not self.modules[module.name] then self.order[#self.order + 1] = module.name end
     self.modules[module.name] = module
     return module
+end
+
+--- 已注册则返回现有实例，否则 require("adarkroom.<name>").new(engine) 并注册。
+function Engine:module(name)
+    return self.modules[name] or self:register(require("adarkroom." .. name).new(self))
 end
 
 function Engine:travelTo(module)
     if self.activeModule == module then return end
     self.activeModule = module
-    if module.onArrival then module:onArrival() end
     self.notifications:printQueue(module)
+    if module.onArrival then module:onArrival() end
     self:requestRender()
 end
 
@@ -149,8 +218,13 @@ end
 function Engine:start()
     self.running = true
     self.visible = true
-    local room = self:register(require("adarkroom.room").new(self))
+    local room = self:module("room")
+    if self.state:get("features.location.outside") then self:module("outside") end
     self.events:init()
+    for id in pairs(self.cooling) do
+        local left = self:cooldownLeft(id)
+        if left > 0 then self:setTimeout(function() self:requestRender() end, left) end
+    end
     self:incomeTick()
     self:travelTo(room)
     self:render()
