@@ -44,7 +44,9 @@ function Events:init()
 end
 
 function Events:encounters() return require("adarkroom.events.encounters") end
-function Events:setpiece(name) return require("adarkroom.events.setpieces")[name] end
+function Events:setpiece(name)
+    return require("adarkroom.events.setpieces")[name] or require("adarkroom.events.executioner")[name]
+end
 
 function Events:activeEvent() return self.stack[1] end
 function Events:inWorld() return self.engine.activeModule ~= nil and self.engine.activeModule.name == "world" end
@@ -193,7 +195,21 @@ end
 
 -- COMBAT ---------------------------------------------------------------------
 --[[ 原版是实时战斗：敌人按 attackDelay 秒出手，玩家按钮各有冷却。这里保留实时节奏，
-     只在出手、命中等事件发生时刷新界面（电子墨水屏不做逐秒倒计时）。 ]]
+     只在出手、命中等事件发生时刷新界面（电子墨水屏不做逐秒倒计时）。
+     状态（原版 setStatus）：shield 护盾（下一次受击改为回血，然后破碎）、enraged 狂暴（4 秒内
+     每 0.5 秒出手）、meditation 冥想（5 秒内不出手、伤害全部蓄积，下一次出手一次性打出）、
+     energised 充能（下一击 ×4）、venomous 剧毒（下一击附带每秒 dmg/2 的持续伤害）、
+     boost 强化（玩家 3 秒内武器冷却减半）。 ]]
+
+Events.SHIELD_COOLDOWN = 10
+Events.STIM_COOLDOWN = 10
+Events.ENERGISE_MULTIPLIER = 4
+Events.EXPLOSION_DURATION = 3
+Events.ENRAGE_DURATION = 4
+Events.MEDITATE_DURATION = 5
+Events.BOOST_DURATION = 3
+Events.BOOST_DAMAGE = 10
+Events.DOT_TICK = 1
 
 function Events:fightLog(msg)
     local f = self.fight
@@ -202,47 +218,187 @@ function Events:fightLog(msg)
     while #f.log > Events.LOG_LINES do table.remove(f.log) end
 end
 
+--- 绑定在当前战斗上的定时器：战斗结束（clearTimeouts）时一并取消，过期回调直接丢弃。
+function Events:fightTimer(fn, seconds)
+    local f = self.fight
+    if not f then return end
+    local h
+    h = self.engine:setTimeout(function()
+        f.timers[h] = nil
+        if self.fight == f and not f.fought then fn() end
+    end, seconds)
+    f.timers[h] = true
+    return h
+end
+
+function Events:clearTimeouts()
+    local f = self.fight
+    if not f then return end
+    for h in pairs(f.timers) do self.engine:clearTimeout(h) end
+    f.timers = {}
+    f.attackTimer, f.dotTimer = nil, nil
+end
+
+function Events:enemyName()
+    local scene = self.fight.scene
+    return scene.enemyName or L(scene.enemy or "")
+end
+
 function Events:startCombat(scene)
-    local world = self.engine.modules.world
     self.fight = {
         scene = scene, enemyHp = scene.health, enemyMax = scene.health,
-        stunnedUntil = 0, won = false, fought = false, log = {},
+        stunnedUntil = 0, won = false, fought = false, log = {}, timers = {}, meditateDmg = 0,
+        enemy = { side = "enemy", status = "none" }, player = { side = "player", status = "none" },
     }
     self:fightLog(scene.notification or "")
-    self.fight.attackTimer = self.engine:setTimeout(function() self:enemyAttack() end, scene.attackDelay)
-    if not world or not world.health then return end
+    self:startEnemyAttacks()
+    for _, sp in ipairs(scene.specials or {}) do self:scheduleSpecial(sp) end
+end
+
+--- 原版 setInterval(s.action, s.delay)：敌人的周期技能（护盾 / 充能 / 狂暴 …）
+function Events:scheduleSpecial(sp)
+    local f = self.fight
+    self:fightTimer(function()
+        if f.won then return end
+        local text = sp.action(self.engine, f.enemy)
+        if text then self:fightLog(self:enemyName() .. "：" .. L(text)) end
+        self:scheduleSpecial(sp)
+        self.engine:requestRender()
+    end, sp.delay)
+end
+
+function Events:startEnemyAttacks(delay)
+    local f = self.fight
+    if not f then return end
+    if f.attackTimer then self.engine:clearTimeout(f.attackTimer) f.timers[f.attackTimer] = nil end
+    local d = delay or f.scene.attackDelay
+    f.attackTimer = self:fightTimer(function()
+        f.attackTimer = nil
+        self:enemyAttack()
+        if self.fight == f and not f.won and not f.fought and not f.attackTimer then self:startEnemyAttacks(delay) end
+    end, d)
+end
+
+function Events:setStatus(fighter, status)
+    local f = self.fight
+    fighter.status = status
+    if not f then return end
+    if status == "enraged" and fighter.side == "enemy" then
+        self:startEnemyAttacks(0.5)
+        self:fightTimer(function()
+            fighter.status = "none"
+            self:startEnemyAttacks()
+        end, Events.ENRAGE_DURATION)
+    elseif status == "meditation" then
+        f.meditateDmg = 0
+        self:fightTimer(function() fighter.status = "none" end, Events.MEDITATE_DURATION)
+    elseif status == "boost" then
+        self:fightTimer(function() fighter.status = "none" self.engine:requestRender() end, Events.BOOST_DURATION)
+    end
 end
 
 function Events:abortCombat()
     local f = self.fight
     if f then
+        self:clearTimeouts()
         f.fought = true
-        if f.attackTimer then self.engine:clearTimeout(f.attackTimer) end
         self.fight = nil
     end
+end
+
+--- 打到目标身上，返回飘字文本。hp 改动经 world:setHp（玩家）或 f.enemyHp（敌人）。
+function Events:damage(attacker, target, dmg)
+    local f = self.fight
+    local world = self.engine.modules.world
+    local shielded = target.status == "shield"
+    local energised = attacker.status == "energised"
+    local venomous = attacker.status == "venomous"
+    local meditating = target.status == "meditation"
+    local msg = ""
+    if type(dmg) == "number" then
+        if dmg < 0 then
+            msg = L("miss")
+        else
+            if energised then dmg = dmg * Events.ENERGISE_MULTIPLIER end
+            if meditating then
+                f.meditateDmg = (f.meditateDmg or 0) + dmg
+                msg = tostring(dmg)
+            else
+                msg = (shielded and "+" or "-") .. dmg
+                local delta = shielded and dmg or -dmg
+                if target.side == "enemy" then
+                    f.enemyHp = math.min(f.enemyMax, math.max(0, f.enemyHp + delta))
+                else
+                    world:setHp(math.min(world:getMaxHealth(), math.max(0, world.health + delta)))
+                end
+            end
+            if venomous and not shielded then
+                if f.dotTimer then self.engine:clearTimeout(f.dotTimer) f.timers[f.dotTimer] = nil end
+                local dot = math.floor(dmg / 2)
+                local function tick()
+                    f.dotTimer = self:fightTimer(function()
+                        self:dotDamage(target, dot)
+                        if self.fight == f and not f.fought then tick() end
+                    end, Events.DOT_TICK)
+                end
+                tick()
+            end
+            if shielded then target.status = "none" end -- 护盾挨一下就碎
+        end
+    elseif dmg == "stun" then
+        msg = L("stunned")
+        if target.side == "enemy" then f.stunnedUntil = self.engine:now() + Events.STUN_DURATION end
+    end
+    if energised or venomous then attacker.status = "none" end -- 增益只管一击
+    return msg
+end
+
+function Events:dotDamage(target, dmg)
+    local f = self.fight
+    local world = self.engine.modules.world
+    if target.side == "player" then
+        world:setHp(math.max(0, world.health - dmg))
+        self:fightLog("@ -" .. dmg)
+        self:checkPlayerDeath()
+    else
+        f.enemyHp = math.max(0, f.enemyHp - dmg)
+        self:fightLog(self:enemyName() .. " -" .. dmg)
+        if f.enemyHp <= 0 and not f.won then
+            f.won = true
+            self:winFight()
+        end
+    end
+    self.engine:requestRender()
+end
+
+function Events:checkPlayerDeath()
+    local world = self.engine.modules.world
+    if world.health <= 0 then
+        self:clearTimeouts()
+        self:endEvent()
+        world:die()
+        return true
+    end
+    return false
 end
 
 function Events:enemyAttack()
     local f = self.fight
     if not f or f.won or f.fought then return end
-    local engine, world = self.engine, self.engine.modules.world
-    local scene = f.scene
-    if engine:now() >= f.stunnedUntil then
+    local engine, scene = self.engine, f.scene
+    local stunned = engine:now() < f.stunnedUntil
+    if not stunned and f.enemy.status ~= "meditation" then
         local toHit = scene.hit * (engine.state:hasPerk("evasive") and 0.8 or 1)
-        local name = scene.enemyName or L(scene.enemy or "")
-        if math.random() <= toHit then
-            world:setHp(world.health - scene.damage)
-            self:fightLog(name .. " -" .. scene.damage)
-        else
-            self:fightLog(name .. " " .. L("miss"))
+        local dmg = -1
+        if (f.meditateDmg or 0) > 0 then
+            dmg = f.meditateDmg
+            f.meditateDmg = 0
+        elseif math.random() <= toHit then
+            dmg = scene.damage
         end
-        if world.health <= 0 then
-            self:endEvent()
-            world:die()
-            return
-        end
+        self:fightLog(self:enemyName() .. " " .. self:damage(f.enemy, f.player, dmg))
+        if self:checkPlayerDeath() then return end
     end
-    f.attackTimer = engine:setTimeout(function() self:enemyAttack() end, scene.attackDelay)
     engine:requestRender()
 end
 
@@ -296,19 +452,33 @@ function Events:useWeapon(name)
             if weapon.type == "melee" and sm:hasPerk("barbarian") then dmg = math.floor(dmg * 1.5) end
         end
     end
-    if dmg == "stun" then
-        f.stunnedUntil = engine:now() + Events.STUN_DURATION
-        self:fightLog("@ " .. weapon.verb .. "：" .. L("stunned"))
-    elseif dmg < 0 then
-        self:fightLog("@ " .. weapon.verb .. "：" .. L("miss"))
-    else
-        f.enemyHp = math.max(0, f.enemyHp - dmg)
-        self:fightLog("@ " .. weapon.verb .. " -" .. dmg)
+    self:fightLog("@ " .. weapon.verb .. " " .. self:damage(f.player, f.enemy, dmg))
+    -- 原版 atHealth：血量跌破阈值时触发一次
+    if type(dmg) == "number" and dmg > 0 then
+        for k, action in pairs(f.scene.atHealth or {}) do
+            local th = tonumber(k)
+            if th and f.enemyHp <= th and f.enemyHp + dmg > th then
+                local text = action(engine, f.enemy)
+                if text then self:fightLog(self:enemyName() .. "：" .. L(text)) end
+            end
+        end
     end
     if f.enemyHp <= 0 and not f.won then
         f.won = true
-        self:winFight()
+        if f.scene.explosion then self:explode(f.scene.explosion) else self:winFight() end
     end
+end
+
+--- 原版 explode：敌人死后 3 秒自爆，炸到玩家（护盾同样有效），活下来才算赢。
+function Events:explode(dmg)
+    local f = self.fight
+    self:clearTimeouts()
+    self:fightLog(self:enemyName() .. " *")
+    self:fightTimer(function()
+        self:fightLog("* " .. self:damage(f.enemy, f.player, dmg))
+        if not self:checkPlayerDeath() then self:winFight() end
+        self.engine:requestRender()
+    end, Events.EXPLOSION_DURATION)
 end
 
 function Events:doHeal(item, amount)
@@ -323,12 +493,27 @@ function Events:doHeal(item, amount)
     return false
 end
 
+function Events:useShield()
+    local f = self.fight
+    if not f or f.won then return false end
+    f.player.status = "shield"
+    self:fightLog("@ " .. L("shield"))
+end
+
+function Events:useStim()
+    local f = self.fight
+    if not f or f.won then return false end
+    self:setStatus(f.player, "boost")
+    self:fightLog("@ " .. L("boost"))
+    self:dotDamage(f.player, Events.BOOST_DAMAGE)
+end
+
 function Events:winFight()
     local f = self.fight
+    self:clearTimeouts()
     self.engine:setTimeout(function()
         if not self.fight or self.fight ~= f or f.fought then return end
         f.fought = true
-        if f.attackTimer then self.engine:clearTimeout(f.attackTimer) end
         local active = self:activeEvent()
         active.loot = self:rollLoot(f.scene.loot or {})
         active.won = f.scene.deathMessage or ""
@@ -353,7 +538,7 @@ function Events:rollLoot(lootList)
     return rows
 end
 
---- 拿一件；放不下返回 false（原版会弹出丢弃菜单，这里直接置灰，见 README）
+--- 拿一件；放不下返回 false（界面上会改为弹出丢弃菜单，见 dropMenu）
 function Events:takeOne(row)
     local Path = require("adarkroom.path")
     local path = self.engine.modules.path
@@ -368,6 +553,59 @@ function Events:takeAll(row)
     while self:takeOne(row) do end
 end
 
+--- 原版 drawDrop：背包放不下时，列出为腾出空间各需丢掉多少件（每种物品一项）。
+function Events:dropOptions(row)
+    local Path = require("adarkroom.path")
+    local path = self.engine.modules.path
+    local weight, free = Path.getWeight(row.name), path:getFreeSpace()
+    local opts = {}
+    local outfit = path:outfit()
+    local names = {}
+    for k in pairs(outfit) do names[#names + 1] = k end
+    table.sort(names)
+    for _, k in ipairs(names) do
+        local w = Path.getWeight(k)
+        if k ~= row.name and w > 0 and (outfit[k] or 0) > 0 then
+            local num = math.min(math.ceil((weight - free) / w), outfit[k])
+            if num > 0 then opts[#opts + 1] = { name = k, num = num } end
+        end
+    end
+    return opts
+end
+
+--- 原版 dropStuff：丢下的东西放回战利品列表，然后拿起原本想拿的那件。
+function Events:dropStuff(active, row, opt)
+    local outfit = self.engine.modules.path:outfit()
+    local target
+    for _, r in ipairs(active.loot) do if r.name == opt.name then target = r end end
+    if target then target.left = target.left + opt.num
+    else active.loot[#active.loot + 1] = { name = opt.name, left = opt.num } end
+    outfit[opt.name] = outfit[opt.name] - opt.num
+    self:takeOne(row)
+end
+
+function Events:dropView(active)
+    local row = active.dropFor
+    local buttons = { { label = L("drop:") } }
+    for _, opt in ipairs(self:dropOptions(row)) do
+        buttons[#buttons + 1] = { text = L(opt.name) .. " x" .. opt.num, callback = function()
+            active.dropFor = nil
+            self:dropStuff(active, row, opt)
+            self.engine:requestRender()
+        end }
+    end
+    buttons[#buttons + 1] = { text = L("nothing"), callback = function()
+        active.dropFor = nil
+        self.engine:requestRender()
+    end }
+    local path = self.engine.modules.path
+    return {
+        title = active.def.title,
+        lines = { L(row.name) .. " [" .. row.left .. "]", L("free {0}/{1}", math.floor(path:getFreeSpace()), path:getCapacity()) },
+        buttons = buttons, is_event = true,
+    }
+end
+
 function Events:lootButtons(active)
     local Path = require("adarkroom.path")
     local path = self.engine.modules.path
@@ -378,8 +616,11 @@ function Events:lootButtons(active)
             local fits = Path.getWeight(row.name) <= path:getFreeSpace()
             any = any or fits
             buttons[#buttons + 1] = {
-                { text = L(row.name) .. " [" .. row.left .. "]", enabled = fits,
-                  callback = function() self:takeOne(row) self.engine:requestRender() end },
+                { text = L(row.name) .. " [" .. row.left .. "]",
+                  callback = function()
+                      if not self:takeOne(row) and #self:dropOptions(row) > 0 then active.dropFor = row end
+                      self.engine:requestRender()
+                  end },
                 { text = L("take") .. " " .. L("all"), enabled = fits,
                   callback = function() self:takeAll(row) self.engine:requestRender() end },
             }
@@ -401,28 +642,37 @@ local function costText(info)
     return info.text
 end
 
+local STATUS = { shield = "shield", enraged = "enraged", meditation = "meditation", energised = "energised",
+    venomous = "venomous", boost = "boost" }
+local function statusText(st)
+    if st and STATUS[st] then return " [" .. L(STATUS[st]) .. "]" end
+    return ""
+end
+
 function Events:combatView(active)
     local engine, world, f = self.engine, self.engine.modules.world, self.fight
     local World = require("adarkroom.world")
     local scene = f.scene
     local lines = {
-        "@  " .. world.health .. "/" .. world:getMaxHealth(),
-        (scene.chara or "?") .. "  " .. f.enemyHp .. "/" .. f.enemyMax .. "  " .. (scene.enemyName or L(scene.enemy or "")),
+        "@  " .. world.health .. "/" .. world:getMaxHealth() .. statusText(f.player.status),
+        (scene.chara or "?") .. "  " .. f.enemyHp .. "/" .. f.enemyMax .. "  " .. self:enemyName() .. statusText(f.enemy.status),
         "",
     }
     for _, l in ipairs(f.log) do lines[#lines + 1] = l end
     local outfit = engine.modules.path:outfit()
+    local boosted = f.player.status == "boost"
     local attack = {}
     for _, k in ipairs(self:weaponList()) do
         local w = World.Weapons[k]
         local cd = w.cooldown
         if w.type == "unarmed" and engine.state:hasPerk("unarmed master") then cd = cd / 2 end
+        if boosted then cd = cd / 2 end
         local ok = true
         for c, n in pairs(w.cost or {}) do if (outfit[c] or 0) < n then ok = false end end
-        attack[#attack + 1] = engine:button{ id = "atk_" .. k, text = w.verb, cooldown = cd, cost = w.cost, enabled = ok,
+        attack[#attack + 1] = engine:button{ id = "atk_" .. k, text = w.verb, cooldown = cd, cost = w.cost, enabled = ok and not f.won,
             callback = function() return self:useWeapon(k) end }
     end
-    local canHeal = world.health < world:getMaxHealth()
+    local canHeal = world.health < world:getMaxHealth() and not f.won
     local heal = {
         engine:button{ id = "eat", text = L("eat meat"), cooldown = Events.EAT_COOLDOWN, cost = { ["cured meat"] = 1 },
             enabled = canHeal and (outfit["cured meat"] or 0) > 0,
@@ -430,10 +680,39 @@ function Events:combatView(active)
     }
     if (outfit.medicine or 0) ~= 0 then
         heal[#heal + 1] = engine:button{ id = "meds", text = L("use meds"), cooldown = Events.MEDS_COOLDOWN,
-            cost = { medicine = 1 }, enabled = canHeal,
+            cost = { medicine = 1 }, enabled = canHeal and (outfit.medicine or 0) > 0,
             callback = function() return self:doHeal("medicine", world:medsHeal()) end }
     end
-    return { title = active.def.title, lines = lines, buttons = { attack, heal }, is_event = true }
+    if (outfit.hypo or 0) ~= 0 then
+        heal[#heal + 1] = engine:button{ id = "hypo", text = L("use hypo"), cooldown = Events.HYPO_COOLDOWN,
+            cost = { hypo = 1 }, enabled = canHeal and (outfit.hypo or 0) > 0,
+            callback = function() return self:doHeal("hypo", world:hypoHeal()) end }
+    end
+    local extra = {}
+    -- 原版：兴奋剂按钮只看背包里有没有，使用时并不消耗（照搬）
+    if (outfit.stim or 0) > 0 then
+        extra[#extra + 1] = engine:button{ id = "stim", text = L("boost"), cooldown = Events.STIM_COOLDOWN,
+            enabled = not f.won, callback = function() return self:useStim() end }
+    end
+    if engine.state:get('stores["kinetic armour"]', true) > 0 then
+        extra[#extra + 1] = engine:button{ id = "shld", text = L("shield"), cooldown = Events.SHIELD_COOLDOWN,
+            enabled = not f.won, callback = function() return self:useShield() end }
+    end
+    local buttons = { attack, heal }
+    if #extra > 0 then buttons[#buttons + 1] = extra end
+    return { title = active.def.title, lines = lines, buttons = buttons, is_event = true }
+end
+
+--- 原版：背包里有发光石时事件按钮不再花火把。
+function Events:effectiveCost(info)
+    if not info.cost then return nil end
+    local outfit = self:inWorld() and self.engine.modules.path:outfit() or {}
+    if (outfit.glowstone or 0) > 0 and info.cost.torch then
+        local c = {}
+        for k, v in pairs(info.cost) do if k ~= "torch" then c[k] = v end end
+        return c
+    end
+    return info.cost
 end
 
 --- 当前事件的界面描述；没有事件返回 nil。
@@ -441,6 +720,7 @@ function Events:view()
     local active = self:activeEvent()
     if not active then return nil end
     if self.fight then return self:combatView(active) end
+    if active.dropFor then return self:dropView(active) end
     local engine = self.engine
     local scene = active.def.scenes[active.scene]
     local lines = {}
@@ -456,7 +736,12 @@ function Events:view()
                 if scene.nextScene and scene.nextScene ~= "end" then self:loadScene(scene.nextScene) else self:endEvent() end
             end }
     end
-    for _, info in ipairs(scene.buttons or {}) do
+    for _, orig in ipairs(scene.buttons or {}) do
+        local cost = self:effectiveCost(orig)
+        local info = orig
+        if cost ~= orig.cost then
+            info = setmetatable({ cost = cost }, { __index = orig })
+        end
         local enabled = self:canAfford(info)
         if info.available and not info.available(engine) then enabled = false end
         buttons[#buttons + 1] = engine:button{ id = info.cooldown and ("ev_" .. info.id) or nil, text = costText(info),

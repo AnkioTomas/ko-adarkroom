@@ -78,8 +78,21 @@ Items.TradeGoods = {
 
 Items.MiscItems = { { name = "laser rifle", type = "weapon" } }
 
+-- 原版 script/fabricator.js 的 Fabricator.Craftables（外星合金制造）
+Items.Fabricator = {
+    { name = "energy blade", type = "weapon", buildMsg = L("the blade hums, charged particles sparking and fizzing."), cost = fixed{ ["alien alloy"] = 1 } },
+    { name = "fluid recycler", type = "upgrade", maximum = 1, buildMsg = L("water out, water in. waste not, want not."), cost = fixed{ ["alien alloy"] = 2 } },
+    { name = "cargo drone", type = "upgrade", maximum = 1, buildMsg = L("the workhorse of the wanderer fleet."), cost = fixed{ ["alien alloy"] = 2 } },
+    { name = "kinetic armour", type = "upgrade", maximum = 1, blueprintRequired = true, buildMsg = L("wanderer soldiers succeed by subverting the enemy's rage."), cost = fixed{ ["alien alloy"] = 2 } },
+    { name = "disruptor", type = "weapon", blueprintRequired = true, buildMsg = L("somtimes it is best not to fight."), cost = fixed{ ["alien alloy"] = 1 } },
+    { name = "hypo", type = "tool", blueprintRequired = true, buildMsg = L("a handful of hypos. life in a vial."), cost = fixed{ ["alien alloy"] = 1 }, quantity = 5 },
+    { name = "stim", type = "tool", blueprintRequired = true, buildMsg = L("sometimes it is best to fight without restraint."), cost = fixed{ ["alien alloy"] = 1 } },
+    { name = "plasma rifle", type = "weapon", blueprintRequired = true, buildMsg = L("the peak of wanderer weapons technology, sleek and deadly."), cost = fixed{ ["alien alloy"] = 1 } },
+    { name = "glowstone", label = "glow stone", type = "tool", blueprintRequired = true, buildMsg = L("a smooth, perfect sphere. its light is inextinguishable."), cost = fixed{ ["alien alloy"] = 1 } },
+}
+
 Items.byName = {}
-for _, list in ipairs({ Items.MiscItems, Items.TradeGoods, Items.Craftables }) do
+for _, list in ipairs({ Items.MiscItems, Items.TradeGoods, Items.Craftables, Items.Fabricator }) do
     for _, it in ipairs(list) do Items.byName[it.name] = it end
 end
 

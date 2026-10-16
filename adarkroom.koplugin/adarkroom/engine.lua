@@ -16,6 +16,7 @@ Engine.__index = Engine
 
 Engine.SAVE_DELAY = 1      -- 秒：合并多次修改后再写盘
 Engine.INCOME_TICK = 1     -- 秒：原版 collectIncome 每秒一次
+Engine.PAGE_ROWS = 8       -- 每页按钮行数（不含翻页行与导航行），可用设置 page_rows 覆盖
 
 -- 原版 Engine.Perks（文字在第 4 批战斗时用到，先全部带上）
 Engine.Perks = {
@@ -137,6 +138,7 @@ function Engine:requestSave()
 end
 
 function Engine:saveGame()
+    if self.gameOver then return end -- 通关后存档已清（只留声望），不要再写回
     self.state.tree.port_version = State.PORT_VERSION
     local cd = {}
     for id in pairs(self.cooling) do
@@ -177,8 +179,7 @@ function Engine:render()
             for _, m in ipairs(msgs) do lines[#lines + 1] = m end
         end
     end
-    local buttons = {}
-    for _, b in ipairs(view.buttons or {}) do buttons[#buttons + 1] = b end
+    local buttons = self:paginate(view.title or "", view.buttons or {})
     if not view.is_event then
         local nav = {}
         for _, name in ipairs(self.order) do
@@ -187,7 +188,7 @@ function Engine:render()
                 nav[#nav + 1] = { text = "→ " .. m:locationName(), callback = function() self:travelTo(m) end }
             end
         end
-        nav[#nav + 1] = { text = L("exit") == "exit" and "退出" or L("exit"), callback = function() self:close() end }
+        nav[#nav + 1] = { text = L("exit"), callback = function() self:close() end }
         buttons[#buttons + 1] = nav
     end
     self.host:showScreen{
@@ -196,10 +197,76 @@ function Engine:render()
     }
 end
 
---- 原版 Prestige.collectStores（被毁村庄的地标）；声望系统在第 5 批。
+--- 按钮项排成行（连续的单个按钮两两并排），超过一页时分页并加翻页行。
+--- 页码按界面标题记忆；电子墨水屏上不做滚动条，翻页即整屏重绘。
+function Engine:paginate(key, items)
+    local rows, pending = {}, nil
+    local function flush()
+        if pending then rows[#rows + 1] = { pending } pending = nil end
+    end
+    for _, b in ipairs(items) do
+        if b.label then
+            flush()
+            rows[#rows + 1] = b
+        elseif b[1] then
+            flush()
+            rows[#rows + 1] = b
+        elseif pending then
+            rows[#rows + 1] = { pending, b }
+            pending = nil
+        else
+            pending = b
+        end
+    end
+    flush()
+    local per = self.host:getSetting("page_rows", Engine.PAGE_ROWS)
+    if type(per) ~= "number" or per < 2 then per = Engine.PAGE_ROWS end
+    if #rows <= per then return rows end
+    self.pages = self.pages or {}
+    local pages = math.ceil(#rows / per)
+    local page = math.max(1, math.min(self.pages[key] or 1, pages))
+    self.pages[key] = page
+    local out = {}
+    for i = (page - 1) * per + 1, math.min(#rows, page * per) do out[#out + 1] = rows[i] end
+    -- 分组标题落在页尾时没有意义，挪到下一页
+    if out[#out] and out[#out].label and page < pages then out[#out] = nil end
+    out[#out + 1] = {
+        -- pager 字段给能画专用翻页条的宿主界面用（月读 Pager）；通用界面把它当三个按钮画
+        pager = { page = page, pages = pages,
+            prev = function() self.pages[key] = page - 1 self:requestRender() end,
+            next = function() self.pages[key] = page + 1 self:requestRender() end },
+        { text = "‹", enabled = page > 1, callback = function() self.pages[key] = page - 1 self:requestRender() end },
+        { text = page .. " / " .. pages, enabled = false, callback = function() end },
+        { text = "›", enabled = page < pages, callback = function() self.pages[key] = page + 1 self:requestRender() end },
+    }
+    return out
+end
+
+--- 原版 Prestige.collectStores（被毁村庄的地标）。
 function Engine:prestigeCollect()
-    local ok, Prestige = pcall(require, "adarkroom.prestige")
-    if ok and Prestige.collectStores then Prestige.collectStores(self) end
+    require("adarkroom.prestige").collectStores(self)
+end
+
+--- 原版 Engine.deleteSave(true)：清空存档但保留声望（previous.*）。通关时调用。
+function Engine:deleteSave()
+    local Prestige = require("adarkroom.prestige")
+    local prestige = Prestige.get(self)
+    self:clearAllTimers()
+    self.saveTimer, self.renderPending = nil, false
+    self.cooling = {}
+    self.host:saveState({ port_version = State.PORT_VERSION, previous = { stores = prestige.stores, score = prestige.score } })
+    self.gameOver = true
+end
+
+--- 结局里的「重新开始」：丢掉当前引擎，用同一宿主读取（只剩声望的）存档开新局。
+function Engine:restart()
+    self.running, self.visible = false, false
+    self:clearAllTimers()
+    local fresh = Engine.new(self.host)
+    fresh.game = self.game
+    if self.game then self.game.engine = fresh end
+    fresh:start()
+    return fresh
 end
 
 -- MODULES --------------------------------------------------------------------
@@ -229,6 +296,8 @@ function Engine:start()
     local room = self:module("room")
     if self.state:get("features.location.outside") then self:module("outside") end
     if self.state:get("features.location.path") or self.state:get("stores.compass") then self:module("path") end
+    if self.state:get("features.location.fabricator") then self:module("fabricator") end
+    if self.state:get("features.location.spaceShip") or self.state:get("game.foundShip") then self:module("ship") end
     local snap = self.state:get("expedition")
     self.events:init()
     for id in pairs(self.cooling) do

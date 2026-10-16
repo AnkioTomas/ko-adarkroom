@@ -9,7 +9,8 @@ local host = {
     schedule = function(_, s, fn) seq = seq + 1; queue[#queue + 1] = { at = clock + s, seq = seq, fn = fn } end,
     unschedule = function(_, fn) for i = #queue, 1, -1 do if queue[i].fn == fn then table.remove(queue, i) end end end,
     loadState = function() return saved end, saveState = function(_, t) saved = t end,
-    getSetting = function(_, _, d) return d end, setSetting = function() end, notify = function() end,
+    getSetting = function(_, k, d) if k == "page_rows" then return 100 end return d end,
+    setSetting = function() end, notify = function() end,
     now = function() return clock end,
 }
 require("adarkroom.host.interface").check(host)
@@ -225,7 +226,232 @@ assert(engine.activeModule == engine.modules.path, "returned home: " .. tostring
 assert(sm:get("expedition") == nil, "expedition cleared")
 assert(sm:get('stores["cured meat"]') >= 20, "outfit returned")
 
+
+-- 6. 残破战舰（Executioner）全部事件随机走，带状态 / 特技 / 自爆 / atHealth --------------
+local World = require("adarkroom.world")
+local exe = require("adarkroom.events.executioner")
+local enames = {}
+for k in pairs(exe) do enames[#enames + 1] = k end
+table.sort(enames)
+sm:set('stores["kinetic armour"]', 1)
+for _, name in ipairs(enames) do
+    for _ = 1, 4 do
+        world.state = world.state or World.deepcopy(sm:get("game.world"))
+        local o = engine.modules.path:outfit()
+        o.torch, o["cured meat"], o.medicine, o.hypo, o.stim = 10, 10, 5, 3, 1
+        o["plasma rifle"], o["energy cell"] = 1, 50
+        world.health, world.water = 999, 10
+        engine.events:startEvent(exe[name])
+        local steps = 0
+        while engine.events:activeEvent() and steps < 300 do
+            advance(0)
+            if engine.events.fight then
+                local bs = {}
+                for _, b in ipairs(flat()) do if b.enabled ~= false then bs[#bs + 1] = b end end
+                if #bs > 0 then bs[math.random(#bs)].callback() end
+                if world.health < 300 then world:setHp(999) end
+                advance(1)
+            else
+                local opts = {}
+                for _, b in ipairs(flat()) do if b.enabled ~= false then opts[#opts + 1] = b end end
+                if #opts == 0 then advance(1) else opts[math.random(#opts)].callback() end
+                advance(1)
+            end
+            steps = steps + 1
+        end
+        if engine.events:activeEvent() then engine.events:endEvent() end
+        if world.dead then -- 不应发生（血量开挂），保险
+            error("died in " .. name)
+        end
+    end
+end
+assert(engine.events.fight == nil)
+-- 直接打每个带特技 / atHealth / 自爆的战斗场景，保证状态逻辑都跑到
+local special = 0
+for _, name in ipairs(enames) do
+    local snames = {}
+    for sn in pairs(exe[name].scenes) do snames[#snames + 1] = sn end
+    table.sort(snames)
+    for _, sn in ipairs(snames) do
+        local sc = exe[name].scenes[sn]
+        if sc.combat and (sc.specials or sc.atHealth or sc.explosion) then
+            special = special + 1
+            local o = engine.modules.path:outfit()
+            o.stim, o["energy cell"], o["plasma rifle"] = 1, 200, 1
+            world:setHp(999)
+            engine.events:startEvent{ title = "S", scenes = { start = sc, ["end"] = { text = {}, buttons = {} } } }
+            local t = 0
+            while engine.events.fight and t < 120 do
+                advance(0)
+                local b = find("瓦解") or find("挥拳")
+                if b and b.enabled ~= false and t > 20 then b.callback() end
+                local sh = find("护盾")
+                if sh and sh.enabled ~= false then sh.callback() end
+                if world.health < 300 then world:setHp(999) end
+                advance(1)
+                t = t + 1
+            end
+            assert(not engine.events.fight, "special fight ended: " .. name .. "/" .. sn)
+            if engine.events:activeEvent() then engine.events:endEvent() end
+        end
+    end
+end
+assert(special >= 5, "special scenes " .. special)
+print("executioner events exercised", #enames, "special fights", special)
+
+-- 7. 背包满时的丢弃菜单 --------------------------------------------------------------
+do
+    local o = engine.modules.path:outfit()
+    for k in pairs(o) do o[k] = nil end
+    o["cured meat"] = engine.modules.path:getCapacity()
+    engine.events:startEvent{ title = "T", scenes = { start = { text = { "x" }, loot = { iron = { min = 3, max = 3, chance = 1 } },
+        buttons = { { id = "leave", text = "离开", nextScene = "end" } } } } }
+    advance(0)
+    click("铁")
+    assert(engine.events:activeEvent().dropFor, "drop menu opened")
+    assert(view.title == "T" and find("熏肉 x1"), "drop option")
+    click("熏肉 x1")
+    assert(o.iron == 1 and o["cured meat"] == engine.modules.path:getCapacity() - 1, "dropped and took")
+    local row
+    for _, r in ipairs(engine.events:activeEvent().loot) do if r.name == "cured meat" then row = r end end
+    assert(row and row.left == 1, "dropped item back in loot")
+    click("离开")
+end
+
+-- 8. 回家：战舰 + 星舰 + 蓝图 → 制造机 / 星舰模块 ------------------------------------
+world.state = world.state or World.deepcopy(sm:get("game.world"))
+world.state.executioner, world.state.ship = true, true
+engine.modules.path:outfit()["plasma rifle blueprint"] = 1
+world.curPos = { 30, 30 }
+world:goHome()
+advance(0)
+assert(engine.modules.fabricator and engine.modules.ship, "fabricator + ship registered")
+assert(sm:get('character.blueprints["plasma rifle"]'), "blueprint redeemed")
+sm:set('stores["alien alloy"]', 30)
+engine:travelTo(engine.modules.fabricator)
+advance(0)
+click("等离子步枪")
+assert(sm:get('stores["plasma rifle"]') >= 1 and sm:get('stores["alien alloy"]') == 29, "fabricated")
+click("液体循环器")
+assert(not find("液体循环器").enabled, "max 1")
+
+-- 9. 星舰 → 太空 → 结局 → 声望重开 ----------------------------------------------------
+engine:travelTo(engine.modules.ship)
+advance(0)
+assert(not find("点火起飞").enabled, "no hull, no liftoff")
+click("加固船身")
+assert(find("点火起飞").enabled)
+click("点火起飞")
+assert(view.title == "准备好要离开了吗?", view.title)
+click("裹足徘徊")
+assert(find("点火起飞").enabled, "linger clears cooldown")
+click("点火起飞")
+click("点火起飞") -- 事件里的起飞
+advance(0)
+local space = engine.modules.space
+assert(engine.activeModule == space and view.map, "in space")
+-- 船身 1：不躲，迟早坠毁
+local turns = 0
+while engine.activeModule == space and turns < 200 do click("·") turns = turns + 1 end
+assert(engine.activeModule == engine.modules.ship, "crashed back to ship after " .. turns)
+assert(not find("点火起飞").enabled, "liftoff cooldown after crash")
+for _ = 1, 39 do click("加固船身") end
+advance(130)
+sm:set('stores["fleet beacon"]', 1)
+click("点火起飞")
+advance(0)
+assert(engine.activeModule == space)
+-- 每回合挑不会撞的方向
+turns = 0
+while not space.ending and turns < 200 do
+    local best
+    for _, d in ipairs({ 0, -1, 1 }) do
+        local nx = math.max(1, math.min(space.WIDTH, space.x + d))
+        local safe = true
+        for _, a in ipairs(space.asteroids) do
+            if a.x == nx and a.y + a.speed >= space.HEIGHT then safe = false end
+        end
+        if safe and not best then best = d end
+    end
+    click(({ [0] = "·", [-1] = "←", [1] = "→" })[best or 0])
+    turns = turns + 1
+end
+assert(space.ending, "reached the ending")
+print("ascent turns", turns, "hull left", space.hull, "of", space.maxHull)
+assert(view.lines[1]:find("信标"), "beacon ending text")
+click("等待")
+assert(view.lines[1]:find("游戏得分"), view.lines[1])
+assert(saved.previous and saved.previous.score > 0 and saved.game == nil, "save wiped, prestige kept")
+local total = saved.previous.score
+click("重启")
+engine = g.engine
+sm = engine.state
+advance(0)
+assert(view.title == "小黑屋" and sm:get("previous.score") == total, "restarted with prestige")
+assert(sm:get("stores.wood") == nil, "fresh stores")
+-- 新世界里有被毁村落（cache），进去拿回声望库存
+local W2 = require("adarkroom.world").new(engine)
+assert(W2.LANDMARKS[W2.TILE and W2.TILE.CACHE or "U"], "cache landmark present")
+local prevWood = sm:get("previous.stores")[1]
+engine:prestigeCollect()
+assert(sm:get("stores.wood", true) == prevWood and #sm:get("previous.stores") == 0, "prestige collected")
+print("prestige total", total, "wood back", prevWood)
+
+-- 10. 按钮分页 ------------------------------------------------------------------------
+do
+    local items = {}
+    for i = 1, 30 do items[#items + 1] = { text = "b" .. i, callback = function() end } end
+    host.getSetting = function(_, k, d) if k == "page_rows" then return 4 end return d end
+    local rows = engine:paginate("k", items)
+    assert(#rows == 5 and rows[5].pager and rows[5].pager.pages == 4, "paged")
+    rows[5][3].callback(); advance(0)
+    rows = engine:paginate("k", items)
+    assert(rows[1][1].text == "b9" and rows[5].pager.page == 2, "next page")
+    host.getSetting = function(_, k, d) if k == "page_rows" then return 100 end return d end
+end
+
 -- 5. 存盘与关闭
 g:close()
 assert(saved.port_version == 2 and #queue == 0, "close clears timers")
-print("OK", "pop", saved.game.population, "huts", saved.game.buildings.hut)
+print("OK game", "prestige", saved.previous.score)
+
+-- 11. 月读宿主模拟：utils.settings 桩 + UIManager 桩 -----------------------------------
+do
+    local files = {}
+    package.loaded["utils.settings"] = {
+        getSource = function(id) files[id] = files[id] or {} return files[id] end,
+        saveSource = function(id, values) if values and values ~= files[id] then files[id] = values end files.flushed = (files.flushed or 0) + 1 end,
+    }
+    local shown
+    package.loaded["ui/uimanager"] = {
+        show = function(_, w) shown = w end, close = function() end,
+        scheduleIn = function(_, s, fn) host:schedule(s, fn) end, unschedule = function(_, fn) host:unschedule(fn) end,
+    }
+    package.loaded["adarkroom.ui.screen"] = { new = function(v, oc) return { generic = true, view = v, on_close = oc } end }
+    local MoonHost = require("adarkroom.host.moon")
+    local mh = MoonHost.new()
+    mh.now = function() return clock end
+    queue, clock = {}, 0
+    local mg = require("adarkroom.game").new(mh):show()
+    advance(0)
+    assert(shown and shown.generic and shown.view.title == "小黑屋", "fallback to generic screen without moon themes")
+    mg.engine.state:set("stores.wood", 123)
+    mg:close()
+    assert(files["ext.adarkroom"].state.stores.wood == 123 and files.flushed > 0, "saved via utils.settings")
+    mh:setSetting("page_rows", 6)
+    assert(mh:getSetting("page_rows", 8) == 6 and files["ext.adarkroom"].settings.page_rows == 6)
+    -- 有月读主题界面时优先用它
+    package.loaded["adarkroom.ui.moon_screen"] = { new = function(v) return { moon = true, view = v } end }
+    local mh2 = MoonHost.new()
+    mh2.now = function() return clock end
+    local mg2 = require("adarkroom.game").new(mh2):show()
+    advance(0)
+    assert(shown.moon and mg2.engine.state:get("stores.wood") == 123, "moon screen used, save reloaded")
+    mg2:close()
+    -- moon_source 描述文件符合 registry 约定
+    package.loaded["gettext"] = function(s) return s end
+    local desc = dofile("adarkroom.koplugin/moon_source.lua")
+    assert(desc.api == 1 and desc.id:match("^ext%.[%w_%-]+$") and desc.provides.source == false)
+    assert(desc.provides.home_widgets[1].id == "entry" and type(desc.provides.home_widgets[1].build) == "function")
+    print("OK moon host")
+end

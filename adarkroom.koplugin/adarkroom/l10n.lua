@@ -12,6 +12,14 @@ function L10n.load(locale)
     if L10n.locale == "en" then L10n.table = {} return end
     local ok, t = pcall(require, "adarkroom.l10n." .. L10n.locale)
     L10n.table = ok and type(t) == "table" and t or {}
+    -- 手工补译（上游没翻的后期内容），只补缺不覆盖
+    local ok2, extra = pcall(require, "adarkroom.l10n." .. L10n.locale .. "_extra")
+    if ok2 and type(extra) == "table" then
+        local merged = {}
+        for k, v in pairs(L10n.table) do merged[k] = v end
+        for k, v in pairs(extra) do if merged[k] == nil then merged[k] = v end end
+        L10n.table = merged
+    end
 end
 
 function L10n.translate(str, ...)

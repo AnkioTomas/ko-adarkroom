@@ -1,3 +1,5 @@
+-- This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+-- If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 --[[--
 KOReader 宿主适配：UIManager 显示/定时，LuaSettings 存档（settings/adarkroom.lua）。
 --]]

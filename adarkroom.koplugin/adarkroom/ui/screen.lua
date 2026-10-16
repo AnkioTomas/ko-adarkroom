@@ -1,5 +1,9 @@
+-- This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+-- If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 --[[--
 通用游戏界面：标题 + 文本行 + 按钮列。只依赖 KOReader 基础控件。
+按钮的分页由引擎做（engine:paginate），这里只负责显示；文本区（库存 + 通知日志）
+用 ScrollTextWidget，内容超出时可上下滑动 / 翻页键滚动。
 --]]
 local Blitbuffer = require("ffi/blitbuffer")
 local ButtonTable = require("ui/widget/buttontable")
@@ -8,6 +12,7 @@ local Geom = require("ui/geometry")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local Device = require("device")
 local Font = require("ui/font")
+local ScrollTextWidget = require("ui/widget/scrolltextwidget")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
@@ -66,12 +71,12 @@ function GameScreen:init()
     end
     local map_h = map and map:getSize().h or 0
     local text_h = h - title:getSize().h - buttons:getSize().h - map_h - Screen:scaleBySize(40)
-    local text = TextBoxWidget:new{
+    local text = ScrollTextWidget:new{
         text = table.concat(view.lines or {}, "\n"),
         face = Font:getFace("cfont", 20),
         width = math.floor(w * 0.9),
         height = math.max(text_h, Screen:scaleBySize(60)),
-        height_adjust = false,
+        dialog = self,
     }
     self[1] = FrameContainer:new{
         width = w, height = h, padding = 0, bordersize = 0,

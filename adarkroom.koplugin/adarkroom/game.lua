@@ -7,7 +7,9 @@ local Game = {}
 Game.__index = Game
 
 function Game.new(host)
-    return setmetatable({ engine = require("adarkroom.engine").new(host) }, Game)
+    local self = setmetatable({ engine = require("adarkroom.engine").new(host) }, Game)
+    self.engine.game = self -- 结局「重新开始」会换一个新引擎并回写这里
+    return self
 end
 
 function Game:show()

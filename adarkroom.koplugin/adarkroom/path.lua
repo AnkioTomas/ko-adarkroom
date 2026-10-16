@@ -35,6 +35,9 @@ function Path.new(engine)
     for _, it in ipairs(Items.Craftables) do
         if it.type == "tool" or it.type == "weapon" then self.carryable[#self.carryable + 1] = it end
     end
+    for _, it in ipairs(Items.Fabricator) do
+        if it.type == "tool" or it.type == "weapon" then self.carryable[#self.carryable + 1] = it end
+    end
     self.world = world
     return self
 end

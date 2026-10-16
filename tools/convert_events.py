@@ -35,11 +35,17 @@ def ident_chain():
     while peek()[1]=='.' : nxt(); parts.append(nxt()[1])
     return '.'.join(parts)
 def func():
-    # function ( ) { ... }  or ( ) => { ... } / => expr
+    # function ( ) { ... }  or ( ) => { ... } / x => { ... }
     if peek()[1]=='function': nxt()
-    expect('('); params=[]
-    while peek()[1]!=')': params.append(nxt()[1])
-    expect(')')
+    params=[]
+    if peek()[0]=='i':
+        params.append(nxt()[1])
+    else:
+        expect('(')
+        while peek()[1]!=')':
+            t=nxt()
+            if t[1]!=',': params.append(t[1])
+        expect(')')
     if peek()[1]=='=>': nxt()
     expect('{'); d=1; body=[]
     while True:
@@ -49,7 +55,20 @@ def func():
             d-=1
             if d==0: break
         body.append(t)
-    return 'function(engine)\n'+body_lua(body)+'end'
+    key=''.join(t[1] for t in body)
+    lua=OVERRIDES.get(key)
+    if lua is None: lua=body_lua(body)
+    return 'function(%s)\n'%', '.join(['engine']+params)+lua+'end'
+# 少数 JS 写法（key 为去掉空白的源码）（for 循环、数组 filter）手工对应
+OVERRIDES0={
+ "for ( let i = 0 ; i < 3 ; i + + ) { World . applyMap ( ) ; }":
+   "    local world = engine.modules.world\n    for _i = 1, 3 do world:applyMap() end\n",
+ "Events . _lastSpecial = 'none' ;":
+   "    engine.events.lastSpecial = \"none\"\n",
+ "const last = Events . _lastSpecial ? ? 'none' ; const possible = [ 'shield' , 'enraged' , 'meditation' ] . filter ( p = > p ! = = last ) ; const status = possible [ Math . floor ( Math . random ( ) * possible . length ) ] ; Events . setStatus ( fighter , status ) ; Events . _lastSpecial = status ; return status ;":
+   "    local last = engine.events.lastSpecial or \"none\"\n    local possible = {}\n    for _, p in ipairs({ \"shield\", \"enraged\", \"meditation\" }) do\n        if p ~= last then possible[#possible + 1] = p end\n    end\n    local status = possible[math.random(#possible)]\n    engine.events:setStatus(fighter, status)\n    engine.events.lastSpecial = status\n    return status\n",
+}
+OVERRIDES={k.replace(' ',''):v for k,v in OVERRIDES0.items()}
 def body_lua(b):
     out=[];k=0
     def tk(o=0): return b[k+o][1] if k+o<len(b) else None
@@ -62,6 +81,7 @@ def body_lua(b):
             if name=='curPos' and tk(3)=='[':
                 line.append('world.curPos[%d]'%(int(tk(4))+1)); k+=6; continue
             line.append('world.'+name); k+=3; continue
+        if v=='Events' and tk(1)=='.' and tk(2)=='setStatus': line.append('engine.events:setStatus'); k+=3; continue
         if v=='$SM' and tk(1)=='.': line.append('sm:'+tk(2)); k+=3; continue
         if v=='Notifications' and tk(2)=='notify': line.append('engine:notify'); k+=3; continue
         if v=='Prestige' and tk(2)=='collectStores': line.append('engine:prestigeCollect'); k+=3; continue
@@ -94,7 +114,8 @@ def value(ind,key=None):
         nxt()
         pad='    '*(ind+1)
         return '{\n'+''.join(pad+x+',\n' for x in items)+'    '*ind+'}'
-    if t[1]=='function' or (t[1]=='(' and T[i+1][1]==')' and T[i+2][1]=='=>'):
+    if t[1]=='function' or (t[1]=='(' and T[i+1][1]==')' and T[i+2][1]=='=>') \
+       or (t[0]=='i' and T[i+1][1]=='=>') or (t[1]=='(' and T[i+1][0]=='i' and T[i+2][1]==')' and T[i+3][1]=='=>'):
         f=func()
         return f.replace('\n','\n'+'    '*ind)
     if t[0]=='s': nxt(); return lstr(jsstr(t[1]))
@@ -116,8 +137,12 @@ def keyname(t):
     v=jsstr(t[1]) if t[0]=='s' else t[1]
     return '[%s] = '%lstr(v)
 def obj(ind,parentkey=None):
-    expect('{'); entries=[]
+    expect('{'); entries=[]; spread=None
     while peek()[1]!='}':
+        if peek()[1]=='...':
+            nxt(); spread='Enemies.'+ident_chain().split('.')[-1]
+            if peek()[1]==',': nxt()
+            continue
         kt=nxt(); expect(':')
         raw=jsstr(kt[1]) if kt[0]=='s' else kt[1]
         v=value(ind+1,raw)
@@ -133,16 +158,38 @@ def obj(ind,parentkey=None):
             assert v.startswith('{')
             out.append(pad+'{ id = %s,%s'%(lstr(raw),v[1:])+',\n')
         return '{\n'+''.join(out)+'    '*ind+'}'
-    return '{\n'+''.join(pad+keyname(kt)+v+',\n' for kt,raw,v in entries)+'    '*ind+'}'
-# top level: Events.X = value ;
-while peek()[1]!='=': nxt()
-nxt()
-body=value(0)
+    body='{\n'+''.join(pad+keyname(kt)+v+',\n' for kt,raw,v in entries)+'    '*ind+'}'
+    if spread: return 'merge(%s, %s)'%(spread,body)
+    return body
+# top level: 一条或多条 `A.B = value;`。Enemies.* 成为局部表，Events.* 成为返回值。
+chunks=[]
+while i<len(T):
+    if peek()[0]=='i' and T[i+1][1]=='.' and T[i+3][1]=='=' and T[i][1] in ('Events','Enemies'):
+        target=T[i][1]; i+=4
+        v=value(0)
+        chunks.append((target,v))
+    else:
+        nxt()
+body=''
+for target,v in chunks:
+    if target=='Enemies': body+='local Enemies = '+v+'\n\n'
+for target,v in chunks:
+    if target=='Events': body+='return '+v
+if 'merge(' in body:
+    body='''--- 原版用对象展开 `...Enemies.X` 复用敌人数据
+local function merge(base, over)
+    local t = {}
+    for k, v in pairs(base) do t[k] = v end
+    for k, v in pairs(over) do t[k] = v end
+    return t
+end
+
+'''+body
 hdr='''-- This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 -- If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -- %s
 -- Generated by tools/convert_events.py from upstream doublespeakgames/adarkroom; edit the converter, not this file.
 local L = require("adarkroom.l10n")
 
-return ''' % title
+''' % title
 open(dst,'w').write(hdr+body+'\n')

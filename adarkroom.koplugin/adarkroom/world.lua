@@ -61,7 +61,7 @@ World.WEAPON_ORDER = { "fists", "bone spear", "iron sword", "steel sword", "bayo
 --- 原版标签用 &nbsp; 连接，翻译表的 key 也带 &nbsp;
 local function nb(key) return (L(key):gsub("&nbsp;", " ")) end
 
--- 地标（原版 World.init）。处决者战舰（Executioner）与制造机属于后续版本内容，见第 5 批。
+-- 地标（原版 World.init）。
 local function landmarks(sm)
     local R = World.RADIUS
     local lm = {
@@ -77,6 +77,7 @@ local function landmarks(sm)
         { tile = TILE.BOREHOLE, num = 10, minRadius = 15, maxRadius = R * 1.5, scene = "borehole", label = nb("A&nbsp;Borehole") },
         { tile = TILE.BATTLEFIELD, num = 5, minRadius = 18, maxRadius = R * 1.5, scene = "battlefield", label = nb("A&nbsp;Battlefield") },
         { tile = TILE.SWAMP, num = 1, minRadius = 15, maxRadius = R * 1.5, scene = "swamp", label = nb("A&nbsp;Murky&nbsp;Swamp") },
+        { tile = TILE.EXECUTIONER, num = 1, minRadius = 28, maxRadius = 28, scene = "executioner", label = nb("A&nbsp;Ravaged&nbsp;Battleship") },
     }
     if sm:get("previous.stores") then
         lm[#lm + 1] = { tile = TILE.CACHE, num = 1, minRadius = 10, maxRadius = R * 1.5, scene = "cache", label = nb("A&nbsp;Destroyed&nbsp;Village") }
@@ -100,7 +101,15 @@ function World.new(engine)
     for _, l in ipairs(self.landmarkList) do self.LANDMARKS[l.tile] = l end
     if type(sm:get("game.world.map")) ~= "table" then
         sm:set("features.location.world", true)
+        sm:set("features.executioner", true)
         sm:setM("game.world", { map = self:generateMap(), mask = self:newMask() })
+    elseif not sm:get("features.executioner") then
+        -- 旧地图（第 4 批生成的）里补放残破战舰，同原版
+        local map = sm:get("game.world.map")
+        local lm = self.LANDMARKS[TILE.EXECUTIONER]
+        for _ = 1, lm.num do self:placeLandmark(lm.minRadius, lm.maxRadius, TILE.EXECUTIONER, map) end
+        sm:set("game.world.map", map)
+        sm:set("features.executioner", true)
     end
     local ship = self:mapSearch(TILE.SHIP, sm:get("game.world.map"), 1)
     self.dir = ship and ship[1] and World.compassDir(ship[1]) or "north"
@@ -516,6 +525,9 @@ function World:doSpace()
     local tile = self:getTerrain()
     if tile == TILE.VILLAGE then
         self:goHome()
+    elseif tile == TILE.EXECUTIONER then
+        local scene = self.state.executioner and "executioner-antechamber" or "executioner-intro"
+        self.engine.events:startEvent(require("adarkroom.events.executioner")[scene])
     elseif self.LANDMARKS[tile] then
         if tile ~= TILE.OUTPOST or not self:outpostUsed() then
             self.engine.events:startEvent(self.engine.events:setpiece(self.LANDMARKS[tile].scene))
@@ -583,14 +595,33 @@ function World:goHome()
         sm:add('game.buildings["coal mine"]', 1)
     end
     if self.state.ship and not sm:get("features.location.spaceShip") then
-        -- 飞船模块在第 5 批；先记下发现，届时由 ship 模块接管
-        local ok = pcall(require, "adarkroom.ship")
-        if ok then engine:module("ship") else sm:set("game.foundShip", true) end
+        engine:module("ship")
     end
+    if self.state.executioner and not sm:get("features.location.fabricator") then
+        engine:module("fabricator")
+    end
+    self:redeemBlueprints()
     self.state = nil
     self:returnOutfit()
     sm:remove("expedition", true)
     engine:travelTo(engine.modules.path)
+end
+
+--- 原版 redeemBlueprints：带回的蓝图登记进 character.blueprints，制造机解锁对应物品。
+function World:redeemBlueprints()
+    local sm, outfit = self.engine.state, self:outfit()
+    local redeemed = false
+    for _, item in ipairs({ "hypo", "kinetic armour", "disruptor", "plasma rifle", "stim", "glowstone" }) do
+        local bp = item .. " blueprint"
+        if (outfit[bp] or 0) > 0 then
+            sm:set('character.blueprints["' .. item .. '"]', true)
+            outfit[bp] = nil
+            redeemed = true
+        end
+    end
+    if redeemed then
+        self.engine:notify(nil, L("blueprints feed into the fabricator data port. possibilities grow."))
+    end
 end
 
 function World:returnOutfit()
