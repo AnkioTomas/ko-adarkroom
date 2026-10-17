@@ -422,6 +422,20 @@ do
         getSource = function(id) files[id] = files[id] or {} return files[id] end,
         saveSource = function(id, values) if values and values ~= files[id] then files[id] = values end files.flushed = (files.flushed or 0) + 1 end,
     }
+    local Storage = require("adarkroom.storage")
+    local sfiles = {}
+    local function fake(path)
+        sfiles[path] = sfiles[path] or { data = {} }
+        local f = sfiles[path]
+        return { data = f.data, readSetting = function(_, k) return f.data[k] end,
+            saveSetting = function(_, k, v) f.data[k] = v end, flush = function() f.flushed = true end }
+    end
+    local moon_old = { stores = { wood = 50 } }
+    Storage.deps = { dataDir = function() return "/D" end, settingsDir = function() return "/D/settings" end,
+        open = fake, exists = function(p) return sfiles[p] ~= nil end, mkdirp = function() end,
+        moonState = function() return moon_old end }
+    Storage._reset()
+    fake("/D/settings/adarkroom.lua").saveSetting(nil, "state", { stores = { wood = 10 } })
     local shown
     package.loaded["ui/uimanager"] = {
         show = function(_, w) shown = w end, close = function() end,
@@ -437,7 +451,11 @@ do
     assert(shown and shown.generic and shown.view.title == "小黑屋", "fallback to generic screen without moon themes")
     mg.engine.state:set("stores.wood", 123)
     mg:close()
-    assert(files["ext.adarkroom"].state.stores.wood == 123 and files.flushed > 0, "saved via utils.settings")
+    local sv = sfiles["/D/.moon/game/adarkroom/save.lua"]
+    assert(sv and sv.flushed and sv.data.state.stores.wood == 123, "saved to .moon/game/adarkroom/save.lua")
+    assert(sv.data.migrated_from:find("moon:ext.adarkroom.state", 1, true), "migrated moon save (more progress)")
+    assert(sfiles["/D/settings/adarkroom.lua"].data.state.stores.wood == 10, "old file kept")
+    assert(not files["ext.adarkroom"].state, "save no longer in utils.settings")
     mh:setSetting("page_rows", 6)
     assert(mh:getSetting("page_rows", 8) == 6 and files["ext.adarkroom"].settings.page_rows == 6)
     -- 有月读主题界面时优先用它
@@ -452,6 +470,8 @@ do
     package.loaded["gettext"] = function(s) return s end
     local desc = dofile("adarkroom.koplugin/moon_source.lua")
     assert(desc.api == 1 and desc.id:match("^ext%.[%w_%-]+$") and desc.provides.source == false)
+    local acts = desc.provides.features.panel.actions()
+    assert(acts[1].id == "play" and acts[1].scope == "desktop" and type(acts[1].run) == "function", "panel action")
     assert(desc.provides.home_widgets[1].id == "entry" and type(desc.provides.home_widgets[1].build) == "function")
     print("OK moon host")
 end

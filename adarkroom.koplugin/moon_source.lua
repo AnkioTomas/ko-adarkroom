@@ -51,5 +51,15 @@ local widget = {
 return {
     api = 1,
     id = ID,
-    provides = { source = false, home_widgets = { widget } },
+    provides = {
+        source = false,
+        -- 顶部下拉快捷面板：月读只开放「动作开关」挂点（title / icon / run），点一下全屏打开游戏
+        features = { panel = { actions = function()
+            return { {
+                id = "play", scope = "desktop", title = _("小黑屋"), icon = "local_fire_department",
+                run = function() pcall(openGame) end,
+            } }
+        end } },
+        home_widgets = { widget },
+    },
 }

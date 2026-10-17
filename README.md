@@ -31,8 +31,10 @@
    `book.koplugin/source/registry.lua` 与 `examples/moonsource-demo.koplugin`）。
 3. 在月读首页编辑态「添加组件」里加入「小黑屋」（图标 `local_fire_department`，在月读图标表里）。
    组件是一张跟随月读主题的卡片：火焰图标、标题和存档摘要（火堆状态、所在地、木头、人口；新游戏显示一句引子），整张卡点按进入全屏游戏；主菜单入口照常可用。
-4. 从月读进入时：存档 / 设置写入 `utils.settings.getSource("ext.adarkroom")`（月读数据目录下 `.moon/settings/ext.adarkroom.lua`），
-   与独立插件的存档互不影响；界面改用月读主题组件（标题栏、按钮、翻页条、提示，随月读主题切换），
+4. 顶部下拉快捷面板里有「小黑屋」开关，点一下全屏打开游戏（月读只开放动作开关挂点）。
+5. 存档统一放 `<数据目录>/.moon/game/adarkroom/save.lua`，KOReader 与月读两种入口共用；首次打开时自动从旧位置
+   （`settings/adarkroom.lua`、月读 `ext.adarkroom.state`）复制迁移，旧文件保留作备份，两边都有时取进度多的。
+   月读下的界面设置仍写入 `utils.settings.getSource("ext.adarkroom")`；界面改用月读主题组件（标题栏、按钮、翻页条、提示，随月读主题切换），
    月读版本没有这些组件时自动回落到通用 KOReader 界面。
 
 ## 结构
@@ -59,7 +61,8 @@ adarkroom.koplugin/
   adarkroom/room.lua            小黑屋：火与温度、建造者、建造/制作/购买
   adarkroom/host/interface.lua  宿主接口：界面 / 定时 / 存档 / 设置 / 提示
   adarkroom/host/koreader.lua   KOReader 适配（settings/adarkroom.lua 存档）
-  adarkroom/host/moon.lua       月读适配（存档放 .moon/settings/ext.adarkroom.lua，界面用月读组件）
+  adarkroom/storage.lua         存档位置与迁移（.moon/game/adarkroom/save.lua）
+  adarkroom/host/moon.lua       月读适配（界面用月读组件，设置在 ext.adarkroom 表）
   adarkroom/ui/screen.lua       通用文本 + 按钮界面（可滚动的文本区）
   adarkroom/ui/moon_screen.lua  月读主题界面（ui.themes.widgets.titlebar/button/text/pager）
   adarkroom/ui/moon_card.lua    月读首页卡片（存档摘要，整卡点按进入）

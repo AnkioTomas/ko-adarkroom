@@ -1,14 +1,12 @@
 -- This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 -- If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 --[[--
-KOReader 宿主适配：UIManager 显示/定时，LuaSettings 存档（settings/adarkroom.lua）。
+KOReader 宿主适配：UIManager 显示/定时，LuaSettings 存档（<数据目录>/.moon/game/adarkroom/save.lua，见 core 同级 storage.lua）。
 --]]
 local Interface = require("adarkroom.host.interface")
 
 local Host = {}
 Host.__index = Host
-
-local STATE_FILE = "adarkroom.lua"
 
 function Host.new(opts)
     local self = setmetatable({ opts = opts or {} }, Host)
@@ -17,10 +15,11 @@ end
 
 function Host:_store()
     if not self.store then
-        local DataStorage = require("datastorage")
-        local LuaSettings = require("luasettings")
-        local path = self.opts.state_path or (DataStorage:getSettingsDir() .. "/" .. STATE_FILE)
-        self.store = LuaSettings:open(path)
+        if self.opts.state_path then
+            self.store = require("luasettings"):open(self.opts.state_path)
+        else
+            self.store = require("adarkroom.storage").open()
+        end
     end
     return self.store
 end

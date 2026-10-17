@@ -3,7 +3,8 @@
 --[[--
 月读宿主适配。月读扩展契约（book.koplugin/source/registry.lua，API = 1）只提供首页组件，
 没有独立的界面 / 定时 API，所以定时仍走 KOReader UIManager；
-  存档 / 设置：utils.settings.getSource("ext.adarkroom") 那张独立表（月读数据目录 .moon/settings/ext.adarkroom.lua），
+  存档：与 KOReader 宿主共用 <数据目录>/.moon/game/adarkroom/save.lua（旧的 ext.adarkroom.state 首次迁移过去，见 adarkroom.storage）；
+  设置：utils.settings.getSource("ext.adarkroom") 那张独立表（月读数据目录 .moon/settings/ext.adarkroom.lua），
     改完 saveSource(ID) 落盘（就地修改同一张表，不会 reset），不写月读自己的分区；
   界面：优先 adarkroom.ui.moon_screen（月读主题组件），提示用月读 Toast；
     月读组件缺失（旧版月读 / 独立运行）时回落通用 KOReader 界面与 InfoMessage。
@@ -59,16 +60,7 @@ function Host:notify(text)
     return KOHost.notify(self, text)
 end
 
-function Host:loadState()
-    if not moonSettings() then return KOHost.loadState(self) end
-    return conf().state
-end
-
-function Host:saveState(state)
-    if not moonSettings() then return KOHost.saveState(self, state) end
-    conf().state = state
-    save()
-end
+-- 存档统一走 KOReader 宿主的文件存档（loadState / saveState 继承自 KOHost）
 
 function Host:getSetting(key, default)
     if not moonSettings() then return KOHost.getSetting(self, key, default) end
