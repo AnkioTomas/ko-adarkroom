@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" width="160" alt="小黑屋 logo"></p>
+
 # ko-adarkroom · 小黑屋
 
 [![CI](https://github.com/AnkioTomas/ko-adarkroom/actions/workflows/ci.yml/badge.svg)](https://github.com/AnkioTomas/ko-adarkroom/actions/workflows/ci.yml)

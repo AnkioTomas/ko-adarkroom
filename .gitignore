@@ -6,3 +6,5 @@ shots2/
 *.png
 *.log
 *.zip
+skills-workspace/
+!docs/logo.png
