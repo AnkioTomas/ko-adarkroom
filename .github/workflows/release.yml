@@ -14,7 +14,9 @@ jobs:
           sudo apt-get update && sudo apt-get install -y lua5.1
           lua5.1 spec/headless.lua && lua5.1 spec/headless2.lua
       - name: Package
-        run: zip -r adarkroom.koplugin.zip adarkroom.koplugin -x '*.DS_Store'
+        run: |
+          sudo apt-get install -y zip
+          tools/package.sh "${GITHUB_REF_NAME#v}" adarkroom.koplugin-${GITHUB_REF_NAME#v}.zip
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -22,9 +24,9 @@ jobs:
           cat > notes.md <<NOTES
           小黑屋（A Dark Room）KOReader 插件 / 月读扩展 ${GITHUB_REF_NAME}
 
-          安装：解压 adarkroom.koplugin.zip，把 adarkroom.koplugin 目录复制到 KOReader 的 plugins/ 下并重启。
+          安装：解压 adarkroom.koplugin-<版本>.zip，把 adarkroom.koplugin 目录复制到 KOReader 的 plugins/ 下并重启。
           作为月读扩展：同时启用月读与本插件，在月读首页「添加组件」中加入「小黑屋」。
 
           纯离线。基于 doublespeakgames/adarkroom（MPL-2.0）移植，本项目同样以 MPL-2.0 发布。
           NOTES
-          gh release create "$GITHUB_REF_NAME" adarkroom.koplugin.zip --title "$GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" adarkroom.koplugin-${GITHUB_REF_NAME#v}.zip --title "$GITHUB_REF_NAME" --notes-file notes.md
