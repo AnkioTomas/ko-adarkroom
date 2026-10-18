@@ -5,7 +5,6 @@
 Port of A Dark Room (doublespeakgames/adarkroom), MPL-2.0.
 --]]
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
-local _ = require("gettext")
 
 -- KOReader 只在加载插件那一刻把插件目录放进 package.path；之后（菜单回调、月读首页点按）
 -- 再 require("adarkroom.*") 需要自己补上。
@@ -13,6 +12,7 @@ local PLUGIN_DIR = debug.getinfo(1, "S").source:match("^@(.*)/[^/]*$") or "."
 if not package.path:find(PLUGIN_DIR .. "/?.lua", 1, true) then
     package.path = PLUGIN_DIR .. "/?.lua;" .. package.path
 end
+local _ = require("adarkroom.i18n")
 
 
 local ADarkRoom = WidgetContainer:extend{

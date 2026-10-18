@@ -15,7 +15,9 @@ jobs:
         run: |
           lua5.1 spec/headless.lua
           lua5.1 spec/headless2.lua
+          lua5.1 spec/i18n.lua
       - name: Headless tests (LuaJIT)
         run: |
           luajit spec/headless.lua
           luajit spec/headless2.lua
+          luajit spec/i18n.lua
