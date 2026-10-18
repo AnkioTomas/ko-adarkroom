@@ -5,7 +5,6 @@
 契约见月读 examples/moonsource-demo.koplugin/moon_source.lua（api = 1，id = ext.<name>）。
 没装月读时 KOReader 不会读本文件，插件照常从主菜单启动。
 --]]
-local _ = require("gettext")
 
 -- KOReader 只在加载插件那一刻把插件目录放进 package.path；之后（菜单回调、月读首页点按）
 -- 再 require("adarkroom.*") 需要自己补上。
@@ -14,6 +13,8 @@ if not package.path:find(PLUGIN_DIR .. "/?.lua", 1, true) then
     package.path = PLUGIN_DIR .. "/?.lua;" .. package.path
 end
 
+
+local _ = require("adarkroom.i18n")
 
 local ID = "ext.adarkroom"
 
@@ -34,6 +35,8 @@ local widget = {
         return { height = ok and Card.height() or 110 }
     end,
     build = function(_ctx, w, h)
+        -- 首页出现后稍等再查更新，不和首屏渲染抢网络
+        require("ui/uimanager"):scheduleIn(5, function() pcall(require("adarkroom.update").autoCheck) end)
         -- 存档摘要卡片（月读主题）；卡片模块出错时退回一个普通按钮，入口不丢
         local ok, card = pcall(function() return require("adarkroom.ui.moon_card").build(w, h, loadSave, openGame) end)
         if ok and card then return card end
@@ -48,13 +51,51 @@ local widget = {
     end,
 }
 
+-- 月读设置里的「小黑屋（版本号）」页：自动检查更新开关与手动检查。
+local function settingEntries(desktop)
+    local Update = require("adarkroom.update")
+    local Row = require("ui.themes.widgets.row")
+    local title = string.format("%s（%s）", _("小黑屋"), Update.version())
+    return { {
+        group = "system", order = 91, id = "main", icon = "local_fire_department", title = title,
+        page = {
+            title = title,
+            sections = function()
+                return { { title = _("更新"), rows = {
+                    function(iw)
+                        local on = Update.autoEnabled()
+                        return Row.widget({
+                            width = iw, chevron = false, kind = "toggle", icon = "update",
+                            title = _("自动检查更新"),
+                            subtitle = _("每天最多一次，有新版本时提示"),
+                            status = on and _("开") or _("关"), status_on = on,
+                            callback = function()
+                                Update.setAuto(not on)
+                                desktop:updateView()
+                            end,
+                        })
+                    end,
+                    function(iw)
+                        return Row.widget({
+                            width = iw, chevron = false, kind = "action", icon = "system_update",
+                            title = _("检查更新"),
+                            status = Update.version(), status_on = true,
+                            callback = function() Update.manualCheck() end,
+                        })
+                    end,
+                } } }
+            end,
+        },
+    } }
+end
+
 return {
     api = 1,
     id = ID,
     provides = {
         source = false,
         -- 顶部下拉快捷面板：月读只开放「动作开关」挂点（title / icon / run），点一下全屏打开游戏
-        features = { panel = { actions = function()
+        features = { setting = { entries = settingEntries }, panel = { actions = function()
             return { {
                 id = "play", scope = "desktop", title = _("小黑屋"), icon = "local_fire_department",
                 run = function() pcall(openGame) end,
