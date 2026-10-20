@@ -79,6 +79,12 @@ function Host:setSetting(key, value)
     s:flush()
 end
 
+--- 可滚动的全文（库存太长时界面里放不下）。
+function Host:showText(title, text)
+    local TextViewer = require("ui/widget/textviewer")
+    require("ui/uimanager"):show(TextViewer:new{ title = title, text = text, justified = false })
+end
+
 function Host:notify(text)
     local InfoMessage = require("ui/widget/infomessage")
     require("ui/uimanager"):show(InfoMessage:new{ text = text, timeout = 2 })

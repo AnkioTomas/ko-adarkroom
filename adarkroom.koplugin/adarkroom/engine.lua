@@ -192,6 +192,13 @@ function Engine:render()
                 nav[#nav + 1] = { text = "→ " .. m:locationName(), callback = function() self:travelTo(m) end }
             end
         end
+        local room = self.modules.room
+        local stock = room and not view.ending and room:storesLines() or {}
+        if #stock > 0 and self.host.showText then
+            nav[#nav + 1] = { text = L("stores"), callback = function()
+                self.host:showText(L("stores"), table.concat(room:storesLines(), "\n"))
+            end }
+        end
         -- 不再放「退出」按钮：界面右上角的 ✕ 负责关闭
         if #nav > 0 then buttons[#buttons + 1] = nav end
     end
